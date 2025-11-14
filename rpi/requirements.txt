@@ -1,0 +1,3 @@
+pyzmq
+RPI.GPIO
+python-dotenv
