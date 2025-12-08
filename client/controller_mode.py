@@ -1,53 +1,11 @@
-#!/usr/bin/env python3
-import sys
+# controller_mode.py
 import time
-import json
-import os
+
 import pygame
-import zmq
 
-from dotenv import load_dotenv 
+from config import DUR_FORWARD, DUR_BACKWARD, DUR_TURN, SEND_COOLDOWN, REPEAT_HOLD_INTERVAL
+from zmq_client import send_command, get_heartbeat_age
 
-
-# ==== LOAD ENV ====
-# Tự động đọc file .env trong cùng thư mục (nếu có)
-load_dotenv()
-
-# ==== CONFIG NETWORK (đọc từ ENV) ====
-RPI_IP = os.getenv("RPI_IP", "192.168.10.200")
-ZMQ_PORT = int(os.getenv("ZMQ_PORT", "5555"))
-ADDR = f"tcp://{RPI_IP}:{ZMQ_PORT}"
-
-# Thời lượng mỗi bước di chuyển (giây) – cũng lấy từ env, có default
-DUR_FORWARD = float(os.getenv("DUR_FORWARD", "0.5"))
-DUR_BACKWARD = float(os.getenv("DUR_BACKWARD", "0.5"))
-DUR_TURN = float(os.getenv("DUR_TURN", "0.3"))
-
-SEND_COOLDOWN = float(os.getenv("SEND_COOLDOWN", "0.05"))  # giãn cách giữa 2 lệnh
-
-
-def init_zmq():
-    ctx = zmq.Context.instance()
-    sock = ctx.socket(zmq.REQ)
-    sock.connect(ADDR)
-    print(f"[NET] Connected to {ADDR}")
-    return ctx, sock
-
-def send_command(sock, cmd: str):
-    """
-    Gửi lệnh dạng text tới RPi.
-    Ví dụ:
-      'forward 0.5'
-      'stop'
-      'seq forward 2; right 1; stop'
-    """
-    try:
-        print(f"[NET] -> {cmd!r}")
-        sock.send_string(cmd)
-        reply = sock.recv().decode("utf-8", errors="replace")
-        print(f"[NET] <- {reply}")
-    except Exception as e:
-        print(f"[NET] ERROR: {e}")
 
 def map_hat_to_cmd(hat_x: int, hat_y: int):
     """
@@ -57,7 +15,6 @@ def map_hat_to_cmd(hat_x: int, hat_y: int):
       (-1, 0) -> left
       (1,  0) -> right
       (0,  0) -> stop
-    Trả về string command hoặc None nếu không gửi gì.
     """
     if (hat_x, hat_y) == (0, 1):
         return f"forward {DUR_FORWARD}"
@@ -68,19 +25,18 @@ def map_hat_to_cmd(hat_x: int, hat_y: int):
     elif (hat_x, hat_y) == (1, 0):
         return f"right {DUR_TURN}"
     elif (hat_x, hat_y) == (0, 0):
-        # thả D-pad -> STOP khẩn
         return "stop"
     else:
         return None
 
-def get_button_name(joystick, btn_index: int):
+
+def get_button_name(btn_index: int):
     """
     Mapping cơ bản cho XBOX controller (thường):
       0 -> A
       1 -> B
       2 -> X
       3 -> Y
-    Các nút khác bạn có thể in ra để debug.
     """
     mapping = {
         0: "A",
@@ -90,9 +46,20 @@ def get_button_name(joystick, btn_index: int):
     }
     return mapping.get(btn_index, f"BTN_{btn_index}")
 
-def main():
+
+def controller_loop(sock):
+    """
+    Vòng lặp điều khiển bằng Xbox controller, không mở window.
+    - D-pad: điều khiển di chuyển, giữ để chạy liên tục (step nhỏ).
+    - A: unlock
+    - B: lock
+    - X: emergency stop
+    - Y: seq demo
+    - Ctrl+C: thoát khỏi mode controller, quay về menu.
+    """
     pygame.init()
     pygame.joystick.init()
+    # KHÔNG gọi pygame.display.set_mode -> không mở window
 
     print("[JOY] Looking for Xbox controller...")
     joystick = None
@@ -107,32 +74,41 @@ def main():
             return False
         joystick = pygame.joystick.Joystick(0)
         joystick.init()
-        print(f"[JOY] Connected: {joystick.get_name()} (axes={joystick.get_numaxes()}, buttons={joystick.get_numbuttons()}, hats={joystick.get_numhats()})")
+        print(
+            f"[JOY] Connected: {joystick.get_name()} "
+            f"(axes={joystick.get_numaxes()}, buttons={joystick.get_numbuttons()}, hats={joystick.get_numhats()})"
+        )
         return True
 
-    # Thử kết nối ban đầu
     while not find_joystick():
         print("[JOY] No controller found. Please connect an Xbox controller...")
         time.sleep(1.0)
 
-    ctx, sock = init_zmq()
-
     last_hat = (0, 0)
+    last_hat_send_time = 0.0
     last_send_time = 0.0
     last_buttons = {}
     controller_connected = True
 
+    print("\n===== CONTROLLER MODE =====")
+    print("D-pad: move (hold để chạy liên tục)")
+    print("A: unlock | B: lock | X: STOP | Y: demo seq")
+    print("Ctrl+C để quay lại menu.\n")
+
     try:
         while True:
-            # Kiểm tra kết nối controller
+            # HEARTBEAT watchdog
+            hb_age = get_heartbeat_age()
+            if hb_age > 3.0:
+                print("[HEALTH] WARNING: No heartbeat from RPi > 3s")
+
+            # Controller disconnect / reconnect
             if pygame.joystick.get_count() == 0:
                 if controller_connected:
                     controller_connected = False
                     print("[JOY] Controller disconnected! Sending STOP...")
-                    # khi mất kết nối -> gửi lệnh STOP
                     send_command(sock, "stop")
                     print("[JOY] Please reconnect the controller.")
-                # thử tìm lại
                 find_joystick()
                 time.sleep(0.5)
                 continue
@@ -141,85 +117,85 @@ def main():
                     controller_connected = True
                     print("[JOY] Controller reconnected.")
 
-            # Xử lý event của pygame
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    print("[JOY] Quit signal received.")
-                    return
-
-            if joystick is None:
-                # trong trường hợp hiếm, joystick chưa được init lại
+            # Cập nhật trạng thái joystick
+            try:
+                pygame.event.pump()
+            except Exception as e:
+                print(f"[JOY] pygame.event.pump() error: {e}")
                 time.sleep(0.1)
                 continue
 
-            # Đọc D-pad (hat 0)
+            if joystick is None:
+                time.sleep(0.1)
+                continue
+
+            now = time.time()
+
+            # --- D-PAD (hat) + giữ để lặp lệnh ---
             if joystick.get_numhats() > 0:
                 hat_x, hat_y = joystick.get_hat(0)
             else:
                 hat_x, hat_y = 0, 0
 
-            # Nếu D-pad thay đổi -> gửi lệnh tương ứng
             if (hat_x, hat_y) != last_hat:
                 last_hat = (hat_x, hat_y)
                 cmd = map_hat_to_cmd(hat_x, hat_y)
-                now = time.time()
                 if cmd and (now - last_send_time) >= SEND_COOLDOWN:
                     send_command(sock, cmd)
                     last_send_time = now
+                    last_hat_send_time = now
+            else:
+                # Giữ D-pad → lặp lại lệnh theo REPEAT_HOLD_INTERVAL
+                if (hat_x, hat_y) != (0, 0):
+                    if (now - last_hat_send_time) >= REPEAT_HOLD_INTERVAL:
+                        cmd = map_hat_to_cmd(hat_x, hat_y)
+                        if cmd:
+                            send_command(sock, cmd)
+                            last_send_time = now
+                            last_hat_send_time = now
 
-            # Đọc các nút để xử lý lock/unlock/stop
+            # --- BUTTONS (A,B,X,Y) ---
             num_buttons = joystick.get_numbuttons()
             now_state = {}
             for i in range(num_buttons):
-                val = joystick.get_button(i)
+                try:
+                    val = joystick.get_button(i)
+                except Exception:
+                    val = 0
                 now_state[i] = val
 
-            # Phát hiện nút "vừa bấm xuống" (edge)
             for i, val in now_state.items():
                 prev_val = last_buttons.get(i, 0)
                 if val == 1 and prev_val == 0:
-                    # button i vừa được nhấn
-                    btn_name = get_button_name(joystick, i)
+                    btn_name = get_button_name(i)
                     print(f"[JOY] Button pressed: {btn_name} (index={i})")
-                    now = time.time()
-                    if (now - last_send_time) < SEND_COOLDOWN:
+                    now_btn = time.time()
+                    if (now_btn - last_send_time) < SEND_COOLDOWN:
                         continue
 
                     if btn_name == "A":
                         send_command(sock, "unlock")
-                        last_send_time = now
                     elif btn_name == "B":
                         send_command(sock, "lock")
-                        last_send_time = now
                     elif btn_name == "X":
-                        # Emergency stop
                         send_command(sock, "stop")
-                        last_send_time = now
                     elif btn_name == "Y":
-                        # Ví dụ: một seq ngắn demo (bạn có thể đổi tuỳ ý)
                         seq_cmd = 'seq forward 1; right 1; backward 1; left 1; stop'
                         send_command(sock, seq_cmd)
-                        last_send_time = now
-                    else:
-                        # Các nút khác nếu muốn dùng, map thêm ở đây
-                        pass
+
+                    last_send_time = now_btn
 
             last_buttons = now_state
 
-            # vòng lặp ~50Hz
             time.sleep(0.02)
 
     except KeyboardInterrupt:
-        print("\n[MAIN] KeyboardInterrupt, exiting...")
-    finally:
-        # đảm bảo gửi STOP khi thoát
+        print("\n[CTRL] Controller mode interrupted, sending STOP and returning to menu...")
         try:
             send_command(sock, "stop")
         except Exception:
             pass
+    finally:
         pygame.joystick.quit()
         pygame.quit()
-        print("[MAIN] Shutdown complete.")
-
-if __name__ == "__main__":
-    main()
+        print("[CTRL] Controller mode exit.")

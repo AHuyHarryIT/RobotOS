@@ -4,6 +4,6 @@ services:
     container_name: auto-bot-xbox-client
     env_file: .env         # sẽ tạo tự động bằng script nếu chưa có
     network_mode: host     # để container truy cập được vào 192.168.10.x
-    devices:
-      - "/dev/input:/dev/input"   # map joystick
+    # devices:
+    #   - "/dev/input:/dev/input"   # map joystick
     restart: unless-stopped

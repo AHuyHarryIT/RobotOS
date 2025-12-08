@@ -17,7 +17,9 @@ load_dotenv()
 
 # ==== NETWORK CONFIG FROM ENV ====
 ZMQ_PORT = int(os.getenv("ZMQ_PORT", "5555"))
+HEARTBEAT_PORT = int(os.getenv("HEARTBEAT_PORT", "5556"))
 BIND_ADDR = f"tcp://0.0.0.0:{ZMQ_PORT}"
+HB_ADDR = f"tcp://0.0.0.0:{HEARTBEAT_PORT}"
 
 # ===== Global motion state (1 thread điều khiển xe) =====
 motion_thread: Optional[threading.Thread] = None
@@ -227,12 +229,36 @@ def handle_payload(driver: GPIODriver, payload: str) -> dict:
     return {"ok": True, "mode": "seq" if is_sequence else "single", "cmd": cmd_str}
 
 
+def heartbeat_loop(ctx: zmq.Context):
+    pub = ctx.socket(zmq.PUB)
+    pub.bind(HB_ADDR)
+    print(f"[HB] Heartbeat PUB on {HB_ADDR}")
+    try:
+        while True:
+            msg = {
+                "type": "heartbeat",
+                "ts": time.time(),
+                "status": "ok"
+            }
+            pub.send_json(msg)
+            time.sleep(1.0)
+    except Exception as e:
+        print(f"[HB] Heartbeat loop stopped: {e}")
+    finally:
+        pub.close()
+
+
 # ===== Main ZMQ loop =====
 def main():
     driver = GPIODriver(PINS)
     driver.setup()
 
     ctx = zmq.Context.instance()
+
+     # heartbeat thread
+    hb_thread = threading.Thread(target=heartbeat_loop, args=(ctx,), daemon=True)
+    hb_thread.start()
+    
     sock = ctx.socket(zmq.REP)
     sock.bind(BIND_ADDR)
 
