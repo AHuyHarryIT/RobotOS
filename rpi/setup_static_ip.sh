@@ -1,36 +1,71 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IFACE="eth0"
-IP="192.168.10.210/24"
-GATEWAY="192.168.10.1"
-DNS="8.8.8.8"
+# ================================
+# Ethernet static IP setup for Raspberry Pi (Bookworm)
+# (NO systemd-resolved required)
+# ================================
 
-echo "[INFO] Configuring static IPv4 for Jetson Nano..."
+IFACE="${1:-eth0}"
+IP_CIDR="${2:-192.168.10.200/24}"
+GATEWAY="${3:-192.168.10.1}"
+DNS1="${4:-1.1.1.1}"
+DNS2="${5:-8.8.8.8}"
 
-# Find existing connection for eth0
-CON_NAME=$(nmcli -t -f NAME,DEVICE connection show | awk -F: -v IFACE="$IFACE" '$2==IFACE {print $1; exit}')
+NETWORK_DIR="/etc/systemd/network"
+NET_FILE="${NETWORK_DIR}/20-wired-${IFACE}.network"
 
-# If no connection exists, create one
-if [[ -z "$CON_NAME" ]]; then
-  echo "[INFO] No existing connection found. Creating new one..."
-  CON_NAME="$IFACE"
-  nmcli connection add type ethernet ifname "$IFACE" con-name "$CON_NAME" autoconnect yes
+echo "=== Raspberry Pi Ethernet setup ==="
+echo "Interface : ${IFACE}"
+echo "IP/CIDR   : ${IP_CIDR}"
+echo "Gateway   : ${GATEWAY}"
+echo "DNS       : ${DNS1}, ${DNS2}"
+echo
+
+if [[ "$EUID" -ne 0 ]]; then
+  echo "Run as root: sudo $0"
+  exit 1
 fi
 
-echo "[INFO] Using connection name: $CON_NAME"
+# ---- Disable dhcpcd (if exists) ----
+if systemctl list-unit-files | grep -q "^dhcpcd.service"; then
+  echo "[INFO] Disabling dhcpcd.service..."
+  systemctl disable dhcpcd --now || true
+fi
 
-# Apply static configuration
-nmcli connection modify "$CON_NAME" \
-  ipv4.addresses "$IP" \
-  ipv4.gateway "$GATEWAY" \
-  ipv4.dns "$DNS" \
-  ipv4.method manual \
-  ipv6.method ignore
+# ---- Enable systemd-networkd only ----
+echo "[INFO] Enabling systemd-networkd..."
+systemctl enable systemd-networkd --now
 
-# Restart the connection
-nmcli connection down "$CON_NAME" || true
-nmcli connection up "$CON_NAME"
+# ---- Create network configuration ----
+echo "[INFO] Writing ${NET_FILE} ..."
+mkdir -p "${NETWORK_DIR}"
 
-echo "[OK] Static IP set to 192.168.10.210"
+cat > "${NET_FILE}" <<EOF
+[Match]
+Name=${IFACE}
+
+[Network]
+DHCP=no
+Address=${IP_CIDR}
+Gateway=${GATEWAY}
+DNS=${DNS1}
+DNS=${DNS2}
 EOF
+
+# ---- Restart service ----
+echo "[INFO] Restarting systemd-networkd..."
+systemctl restart systemd-networkd
+
+sleep 2
+
+echo
+echo "=== IPv4 Address ==="
+ip -4 addr show "${IFACE}" || true
+
+echo
+echo "=== Routes ==="
+ip route || true
+
+echo
+echo "[DONE] Static Ethernet configured."
