@@ -1,4 +1,3 @@
-# config.py
 import os
 from dotenv import load_dotenv
 
@@ -9,6 +8,7 @@ load_dotenv()
 RPI_IP = os.getenv("RPI_IP", os.getenv("RPI_HOST", "192.168.10.200"))
 ZMQ_PORT = int(os.getenv("ZMQ_PORT", "5555"))
 HEARTBEAT_PORT = int(os.getenv("HEARTBEAT_PORT", "5556"))
+CLIENT_SERVER_PORT = int(os.getenv("CLIENT_SERVER_PORT", "5557")) 
 
 ADDR = f"tcp://{RPI_IP}:{ZMQ_PORT}"
 HB_ADDR = f"tcp://{RPI_IP}:{HEARTBEAT_PORT}"

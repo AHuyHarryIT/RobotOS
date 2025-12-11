@@ -2,16 +2,31 @@
 
 ## Architecture Overview
 
-This is a **distributed robotics control system** for a 3-pin GPIO-controlled RC car, using a client-server architecture over ZeroMQ:
+This is a **3-tier distributed robotics control system** for a 3-pin GPIO-controlled RC car:
 
-- **Client** (`client/`): Runs on miniPC (x86), provides two control modes - Xbox controller and sequence commands
-- **Server** (`rpi/`): Runs on Raspberry Pi, controls GPIO pins (BCM 17, 27, 22) and executes motion commands
+- **Jetson** (`jetson/`): Vision/calibration system - processes camera data and sends control commands (left, right, stop)
+- **Client (Brain)** (`client/`): Runs on miniPC (x86) - central decision hub that receives from multiple sources and coordinates robot control
+  - Receives vision commands from Jetson via ZMQ REP socket (port 5557)
+  - Receives manual input from Xbox controller
+  - Receives text commands via sequence mode
+  - Forwards all commands to RPi for execution
+- **Server (Executor)** (`rpi/`): Runs on Raspberry Pi - controls GPIO pins (BCM 17, 27, 22) and executes motion commands
 - **Communication**: ZeroMQ REQ/REP for commands + PUB/SUB for heartbeat monitoring
 
 ```
-[miniPC Client] --ZMQ:5555--> [RPi Server] --GPIO--> [3-pin relay board] --> [Car motors]
-                <-ZMQ:5556-- (heartbeat)
+[Jetson Vision] --ZMQ:5557--> [miniPC Client (Brain)] --ZMQ:5555--> [RPi Server] --GPIO--> [3-pin relay board] --> [Car motors]
+[Xbox Controller] --------->         |                     <-ZMQ:5556-- (heartbeat)
+[Sequence Mode] ----------->         |
 ```
+
+### Key Principle: Client is the Central Brain
+The miniPC client acts as the **central processing hub** that:
+1. Aggregates inputs from multiple sources (Jetson vision, Xbox controller, manual commands)
+2. Makes decisions and processes commands
+3. Forwards unified commands to RPi for GPIO execution
+4. Monitors RPi health via heartbeat
+
+This architecture allows autonomous (Jetson vision) and manual control (Xbox/sequence) to coexist.
 
 ## Critical Deployment Pattern
 
@@ -56,6 +71,13 @@ Parsing: `parser.py` uses `CMD_PATTERN` regex + `ALIASES` dict. Always handle bo
 
 ## Client Modes
 
+### Command Server Mode (`command_server.py`)
+- Runs in background thread automatically when client starts
+- Binds ZMQ REP socket on port 5557
+- Receives commands from Jetson vision system
+- Forwards all received commands to RPi via existing zmq_client
+- Thread-safe command forwarding with error handling
+
 ### Controller Mode (`controller_mode.py`)
 - D-pad: movement with hold-to-repeat (REPEAT_HOLD_INTERVAL=0.15s)
 - Buttons: A=unlock, B=lock, X=stop, Y=demo seq
@@ -68,18 +90,31 @@ Parsing: `parser.py` uses `CMD_PATTERN` regex + `ALIASES` dict. Always handle bo
 - Accepts single commands or `seq` prefixed sequences
 - `back`/`menu` returns to mode selection, `q` exits entirely
 
+### Server Only Mode
+- Client runs command server without manual control
+- Useful for pure autonomous operation via Jetson
+- Still allows returning to menu for manual override
+
 ## Environment Config Pattern
 
 All timing/network params read from `.env` via `python-dotenv`:
 ```python
-RPI_HOST=192.168.31.211
-ZMQ_PORT=5555
-DUR_FORWARD=0.5     # movement step duration
-SEND_COOLDOWN=0.05  # client rate limit
+# Client config
+RPI_HOST=192.168.31.211         # RPi IP address
+ZMQ_PORT=5555                   # Port for client->RPi commands
+HEARTBEAT_PORT=5556             # Port for RPi->client heartbeat
+CLIENT_SERVER_PORT=5557         # Port for Jetson->client commands
+DUR_FORWARD=0.5                 # movement step duration
+SEND_COOLDOWN=0.05              # client rate limit
+
+# Jetson config
+CLIENT_IP=192.168.10.100        # miniPC IP address
+CLIENT_PORT=5557                # Client command server port
 ```
 
 Client: `config.py` loads from `client/.env`  
-Server: `zmq_server.py` loads from `rpi/.env`
+Server: `zmq_server.py` loads from `rpi/.env`  
+Jetson: `vision_client.py` loads from `jetson/.env`
 
 ## Docker Quirks
 
