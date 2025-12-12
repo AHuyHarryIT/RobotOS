@@ -62,7 +62,7 @@ def load_config(path="config.json"):
         # NEW: Command sending params
         "SEND_COMMANDS": True,  # Enable/disable sending to client
         "COMMAND_COOLDOWN": 0.3,  # Min time between commands (seconds)
-        "MOVEMENT_DURATION": 0.5,  # Duration for movement commands
+        "MOVEMENT_DURATION": 0.05,  # Duration for movement commands
     }
 
     p = pathlib.Path(path)

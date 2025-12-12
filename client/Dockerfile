@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY xbox_client.py .
+COPY *.py .
 
 # .env sẽ được mount từ ngoài (hoặc env_file trong compose)
-CMD ["python", "xbox_client.py"]
+CMD ["python", "client_main.py"]

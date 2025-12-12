@@ -9,8 +9,8 @@ PINS = (OUT1, OUT2, OUT3)
 # Bit patterns (HIGH=1, LOW=0)
 # Note: FORWARD and BACKWARD are swapped per your request.
 STATES = {
-    "FORWARD":  (0, 0, 1),
-    "BACKWARD": (0, 1, 0),
+    "FORWARD":  (0, 1, 0),
+    "BACKWARD": (0, 0, 1),
     "LEFT":     (0, 1, 1),
     "RIGHT":    (1, 0, 0),
     "LOCK":     (1, 0, 1),

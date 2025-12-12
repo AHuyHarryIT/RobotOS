@@ -1,44 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Load .env
-if [ -f .env ]; then
-  # shellcheck disable=SC2046
-  export $(grep -v '^#' .env | xargs -d '\n')
-else
-  echo "[ERROR] .env not found in current directory"
-  exit 1
-fi
-
-PROJECT_NAME="${PROJECT_NAME:-auto-bot}"
+### ==== CONFIG (có thể override bằng env khi chạy) ====
 RPI_HOST="${RPI_HOST:-192.168.10.200}"
 RPI_USER="${RPI_USER:-pi}"
 RPI_DEST_DIR="${RPI_DEST_DIR:-/home/pi/auto-bot-rpi}"
+
+CLIENT_IMAGE="${CLIENT_IMAGE:-auto-bot-xbox-client}"
+CLIENT_CONTAINER_NAME="${CLIENT_CONTAINER_NAME:-auto-bot-xbox-client}"
+
+RPI_IMAGE="${RPI_IMAGE:-auto-bot-rpi}"
+RPI_CONTAINER_NAME="${RPI_CONTAINER_NAME:-auto-bot-rpi}"
+
 ZMQ_PORT="${ZMQ_PORT:-5555}"
 
-CLIENT_BASE="${PROJECT_NAME}-client"
-RPI_BASE="${PROJECT_NAME}-rpi"
-
-# --- generate version tag ---
-VERSION="$(date +%Y%m%d-%H%M%S)"
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  GIT_SHA="$(git rev-parse --short HEAD)"
-  VERSION="${VERSION}-${GIT_SHA}"
-fi
-
-CLIENT_IMAGE="${CLIENT_BASE}:${VERSION}"
-RPI_IMAGE="${RPI_BASE}:${VERSION}"
-
-echo "[SETUP] PROJECT_NAME=${PROJECT_NAME}"
-echo "[SETUP] RPI_HOST=${RPI_HOST}, RPI_USER=${RPI_USER}, RPI_DEST_DIR=${RPI_DEST_DIR}"
-echo "[SETUP] ZMQ_PORT=${ZMQ_PORT}"
-echo "[SETUP] VERSION=${VERSION}"
+echo "[SETUP] RPI_HOST=${RPI_HOST}, RPI_USER=${RPI_USER}, ZMQ_PORT=${ZMQ_PORT}"
+echo "[SETUP] RPI_DEST_DIR=${RPI_DEST_DIR}"
 echo "[SETUP] CLIENT_IMAGE=${CLIENT_IMAGE}, RPI_IMAGE=${RPI_IMAGE}"
 
-# --- 1. Ensure Docker on miniPC ---
+### ==== 1. Kiểm tra Docker trên miniPC ====
 if ! command -v docker &>/dev/null; then
-  echo "[SETUP] Installing Docker on miniPC..."
+  echo "[SETUP] Docker chưa cài trên miniPC. Đang cài (Ubuntu/Debian)..."
   curl -fsSL https://get.docker.com | sh
+fi
+
+if ! command -v docker &>/dev/null; then
+  echo "[ERROR] Docker vẫn chưa dùng được sau khi cài. Thoát."
+  exit 1
 fi
 
 if command -v systemctl &>/dev/null; then
@@ -46,70 +34,85 @@ if command -v systemctl &>/dev/null; then
   sudo systemctl start docker || true
 fi
 
-# --- 2. Copy root .env -> client/.env & rpi/.env ---
-echo "[SETUP] Sync .env to client/ and rpi/..."
-cp .env client/.env
-cp .env rpi/.env
+### ==== 2. Tạo client/.env nếu chưa có ====
+CLIENT_ENV="client/.env"
+if [ ! -f "$CLIENT_ENV" ]; then
+  echo "[SETUP] Tạo client/.env với default…"
+  cat > "$CLIENT_ENV" <<EOF
+RPI_IP=${RPI_HOST}
+ZMQ_PORT=${ZMQ_PORT}
+DUR_FORWARD=0.5
+DUR_BACKWARD=0.5
+DUR_TURN=0.3
+SEND_COOLDOWN=0.05
+EOF
+else
+  echo "[SETUP] client/.env đã tồn tại, giữ nguyên."
+fi
 
-# --- 3. Build & run client Docker (miniPC) ---
-echo "[SETUP] Build client image ${CLIENT_IMAGE}..."
-docker build -t "${CLIENT_IMAGE}" -t "${CLIENT_BASE}:latest" ./client
+### ==== 3. Build & chạy Docker client trên miniPC ====
+echo "[SETUP] Build Docker image cho xbox_client (miniPC)…"
+docker build -t "${CLIENT_IMAGE}" ./client
 
-echo "[SETUP] Start client container via docker-compose..."
+echo "[SETUP] Start container client bằng docker-compose…"
 (
   cd client
-  # docker-compose sẽ dùng client/.env
   docker compose down || true
   docker compose up -d
 )
 
-# --- 4. Ensure Docker on RPi ---
-echo "[SETUP] Ensure Docker on RPi ${RPI_USER}@${RPI_HOST}..."
+echo "[SETUP] Docker client đang chạy (container: ${CLIENT_CONTAINER_NAME})."
+
+### ==== 4. Cài & chuẩn bị Docker trên RPi ====
+echo "[SETUP] Đảm bảo RPi có Docker…"
 
 ssh "${RPI_USER}@${RPI_HOST}" bash -s <<EOF
 set -e
 if ! command -v docker &>/dev/null; then
-  echo "[RPI] Installing Docker..."
+  echo "[RPI] Docker chưa cài, cài bằng get.docker.com…"
   curl -fsSL https://get.docker.com | sh
 fi
+
 if command -v systemctl &>/dev/null; then
   sudo systemctl enable docker || true
   sudo systemctl start docker || true
 fi
+
 mkdir -p "${RPI_DEST_DIR}"
 EOF
+### ==== 5. Copy code rpi/ + .env sang RPi ====
+echo "[SETUP] Copy rpi code + .env sang RPi..."
 
-# --- 5. Copy rpi/ code + .env to RPi ---
-echo "[SETUP] Copy rpi/ to RPi..."
+ssh "${RPI_USER}@${RPI_HOST}" "mkdir -p '${RPI_DEST_DIR}'"
 scp rpi/* "${RPI_USER}@${RPI_HOST}:${RPI_DEST_DIR}/"
 
-# copy .env root → rpi/.env 
-scp .env "${RPI_USER}@${RPI_HOST}:${RPI_DEST_DIR}/.env"
-
-# --- 6. Build & run server Docker on RPi ---
-echo "[SETUP] Build & run server image ${RPI_IMAGE} on RPi..."
+### ==== 6. Build & run Docker server trên RPi ====
+echo "[SETUP] Build & run docker server trên RPi..."
 
 ssh "${RPI_USER}@${RPI_HOST}" bash -s <<EOF
 set -e
 cd "${RPI_DEST_DIR}"
 
 echo "[RPI] Build image ${RPI_IMAGE}..."
-sudo docker build -t "${RPI_IMAGE}" -t "${RPI_BASE}:latest" .
+sudo docker build -t "${RPI_IMAGE}" .
 
-echo "[RPI] Stop old container if exists..."
-sudo docker stop "${RPI_BASE}" 2>/dev/null || true
-sudo docker rm "${RPI_BASE}" 2>/dev/null || true
+echo "[RPI] Stop old container..."
+sudo docker stop "${RPI_CONTAINER_NAME}" 2>/dev/null || true
+sudo docker rm "${RPI_CONTAINER_NAME}" 2>/dev/null || true
 
-echo "[RPI] Run new container ${RPI_BASE}..."
+echo "[RPI] Start new container using .env..."
 sudo docker run -d \
-  --name "${RPI_BASE}" \
+  --name "${RPI_CONTAINER_NAME}" \
   --restart unless-stopped \
   --privileged \
   --network host \
   --env-file "${RPI_DEST_DIR}/.env" \
-  "${RPI_BASE}:latest"
+  "${RPI_IMAGE}"
 
+echo "[RPI] Server container started."
 EOF
 
-echo "[SETUP] DONE. Client & server containers are running."
-echo "${VERSION}" > .last_version
+echo "[SETUP] DONE."
+echo "  - Client docker (xbox) đang chạy trên miniPC."
+echo "  - Server docker (zmq_server + GPIO) đang chạy trên RPi."
+echo "Bạn có thể đổi IP/port bằng env hoặc sửa client/.env rồi chạy lại script."
