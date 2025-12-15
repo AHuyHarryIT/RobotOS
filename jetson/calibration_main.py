@@ -10,8 +10,6 @@ This integrates:
 - Object detection (stop sign detection)
 - Vision client to send commands to miniPC
 
-Usage:
-    python3 calibration_main.py [--config config.json]
 """
 
 import cv2 as cv
@@ -25,9 +23,15 @@ import json
 import pathlib
 from datetime import datetime
 import argparse
+from dotenv import load_dotenv
+from config import Config, reload_all_env
+
 
 # Import from AUTO_CAR_V2
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'AUTO_CAR_V2'))
+sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'AUTO_CAR_V2'))
+PARENT_ENV=os.path.join(os.path.dirname(__file__), 'AUTO_CAR_V2')
+DOTENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+
 from ROI import ROI
 from helpers import rotate, draw_arrow_by_angle
 from static_stop import static_stop_detect, StaticParams
@@ -36,51 +40,11 @@ from calibrate import Calibrate
 # Import vision client
 from vision_client import VisionClient
 
+# Check whether .env file exist
+# dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+# print("[ENV] loading:", dotenv_path, "exists:", os.path.exists(dotenv_path))
+# print("[ENV] STOP_HOLD_FRAMES =", os.getenv("STOP_HOLD_FRAMES"))
 
-def load_config(path="config.json"):
-    """
-    Load hyperparameters from config.json.
-    If file or keys are missing, fall back to sane defaults.
-    """
-    cfg = {
-        "CAM_DEVICE": 0,
-        "VIDEO_PATH": "",
-        "W": 640,
-        "H": 480,
-        "FPS": 30,
-        "OUT_SCALE": 0.7,
-
-        "SHOW_DEBUG_WINDOWS": False,
-        "USE_BLUR": True,
-        "BLUR_KSIZE": 3,
-        "BLUR_SIGMA": 5,
-        "SAFE_FLUSH": 0,
-
-        "ACCEPTANCE": 5,  # degrees tolerance for going straight
-        "STOP_HOLD_FRAMES": 20,
-        
-        # NEW: Command sending params
-        "SEND_COMMANDS": True,  # Enable/disable sending to client
-        "COMMAND_COOLDOWN": 0.3,  # Min time between commands (seconds)
-        "MOVEMENT_DURATION": 0.05,  # Duration for movement commands
-    }
-
-    p = pathlib.Path(path)
-    if not p.exists():
-        print(f"[WARN] {path} not found. Using default config.")
-        return cfg
-
-    try:
-        with p.open("r", encoding="utf-8") as f:
-            user_cfg = json.load(f)
-        if not isinstance(user_cfg, dict):
-            print("[WARN] config.json does not contain a JSON object. Using defaults.")
-            return cfg
-        cfg.update(user_cfg)
-    except Exception as e:
-        print(f"[WARN] Failed to load {path}: {e}. Using defaults.")
-
-    return cfg
 
 
 def console_stop_listener(stop_event):
@@ -94,7 +58,6 @@ def console_stop_listener(stop_event):
             print("[CTRL] Stop requested via console.")
             stop_event.set()
             break
-
 
 def safe_read(cap, flush=0):
     """Grab and retrieve a COMPLETE frame (avoids partial updates)."""
@@ -171,6 +134,7 @@ def main():
     args = parser.parse_args()
     
     # Load config
+    '''
     cfg = load_config(args.config)
     
     CAM_DEVICE = cfg["CAM_DEVICE"]
@@ -189,10 +153,56 @@ def main():
     SEND_COMMANDS = cfg["SEND_COMMANDS"] and not args.no_send
     COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
     MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
+    '''
+
+    # Load .env from the same folder as this script
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
+
+    CAM_DEVICE = Config.CAM_DEVICE
+    VIDEO_PATH = Config.VIDEO_PATH
+    W = Config.W
+    H = Config.H
+    FPS = Config.FPS
+    OUT_SCALE = Config.OUT_SCALE
+    SHOW_DEBUG_WINDOWS = Config.SHOW_DEBUG_WINDOWS
+    USE_BLUR = Config.USE_BLUR
+    BLUR_KSIZE = Config.BLUR_KSIZE
+    BLUR_SIGMA = Config.BLUR_SIGMA
+    SAFE_FLUSH = Config.SAFE_FLUSH
+    ACCEPTANCE = Config.ACCEPTANCE
+    STOP_HOLD_FRAMES = Config.STOP_HOLD_FRAMES
+    SEND_COMMANDS = Config.SEND_COMMANDS
+    COMMAND_COOLDOWN = Config.COMMAND_COOLDOWN
+    MOVEMENT_DURATION = Config.MOVEMENT_DURATION
     
+    DEBUG_STATIC=Config.DEBUG_STATIC
+    THR_MODE=Config.THR_MODE
+    THR_L=Config.THR_L
+    THR_OFFSET=Config.THR_OFFSET
+    MIN_AREA=Config.MIN_AREA
+    MIN_THICK=Config.MIN_THICK
+    ASPECT_MAX=Config.ASPECT_MAX
+    LINE_AR_REJECT=Config.LINE_AR_REJECT
+    LINE_FILL_MAX=Config.LINE_FILL_MAX
+    AREA_PCT=Config.AREA_PCT
+    sp = StaticParams(DEBUG_STATIC=DEBUG_STATIC,
+                    THR_MODE=THR_MODE,
+                    THR_L=THR_L,
+                    THR_OFFSET=THR_OFFSET,
+                    MIN_AREA=MIN_AREA,
+                    MIN_THICK=MIN_THICK,
+                    ASPECT_MAX=ASPECT_MAX,
+                    LINE_AR_REJECT=LINE_AR_REJECT,
+                    LINE_FILL_MAX=LINE_FILL_MAX,
+                    AREA_PCT=AREA_PCT)
+
+    # -------- ENV RELOAD SETUP --------
+    ENV_RELOAD_INTERVAL = 2.0  # seconds
+    last_env_reload = time.time()
+
     # Initialize ROI
     roi_helper = ROI(
-        saved_path="AUTO_CAR_V2/roi_points.txt",
+        saved_path=PARENT_ENV+"/roi_points.txt",
         ROTATE_CW_DEG=0,
         FLIPCODE=1,
         ANGLE_TRIANGLE=math.radians(60),
@@ -261,7 +271,7 @@ def main():
         print("[INFO] Command sending disabled. Running in simulation mode.")
 
     # Initialize state
-    sp = StaticParams()
+
     frame_id = 0
     hold_active = False
     hold_remaining = 0
@@ -283,6 +293,50 @@ def main():
 
     try:
         while True:
+            sp = StaticParams(DEBUG_STATIC=DEBUG_STATIC,
+                            THR_MODE=THR_MODE,
+                            THR_L=THR_L,
+                            THR_OFFSET=THR_OFFSET,
+                            MIN_AREA=MIN_AREA,
+                            MIN_THICK=MIN_THICK,
+                            ASPECT_MAX=ASPECT_MAX,
+                            LINE_AR_REJECT=LINE_AR_REJECT,
+                            LINE_FILL_MAX=LINE_FILL_MAX,
+                            AREA_PCT=AREA_PCT)
+            # -------- PERIODIC ENV RELOAD --------
+            now = time.time()
+            if now - last_env_reload > ENV_RELOAD_INTERVAL:
+                cfg = reload_all_env(DOTENV_PATH)
+
+                USE_BLUR = cfg["USE_BLUR"]
+                BLUR_KSIZE = cfg["BLUR_KSIZE"]
+                BLUR_SIGMA = cfg["BLUR_SIGMA"]
+                SAFE_FLUSH = cfg["SAFE_FLUSH"]
+                ACCEPTANCE = cfg["ACCEPTANCE"]
+                STOP_HOLD_FRAMES = cfg["STOP_HOLD_FRAMES"]
+
+                SEND_COMMANDS = cfg["SEND_COMMANDS"]
+                COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
+                MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
+
+                DEBUG_STATIC=cfg['DEBUG_STATIC']
+                THR_MODE=cfg['THR_MODE']
+                THR_L=cfg['THR_L']
+                THR_OFFSET=cfg['THR_OFFSET']
+                MIN_AREA=cfg['MIN_AREA']
+                MIN_THICK=cfg['MIN_THICK']
+                ASPECT_MAX=cfg['ASPECT_MAX']
+                LINE_AR_REJECT=cfg['LINE_AR_REJECT']
+                LINE_FILL_MAX=cfg['LINE_FILL_MAX']
+                AREA_PCT=cfg['AREA_PCT']
+
+                throttler.cooldown = COMMAND_COOLDOWN
+
+                print(f"[ENV RELOAD] STOP_HOLD_FRAMES={STOP_HOLD_FRAMES}, "
+                    f"ACCEPTANCE={ACCEPTANCE}, BLUR={USE_BLUR}")
+
+                last_env_reload = now
+
             if not SHOW_DEBUG_WINDOWS and stop_event.is_set():
                 print("[INFO] Stop event detected. Exiting loop.")
                 break
@@ -300,7 +354,6 @@ def main():
 
             if USE_BLUR:
                 frame = cv.medianBlur(frame, BLUR_KSIZE)
-                
             start_t = time.time()
             stop_detected, bbox, dbg = static_stop_detect(frame, roi_mask, danger_mask, sp)
             elapsed_ms = (time.time() - start_t) * 1000
