@@ -203,7 +203,7 @@ def main():
 
     # Initialize ROI
     roi_helper = ROI(
-        saved_path=PARENT_ENV+"/roi_points.txt",
+        saved_path="roi_points.txt",
         ROTATE_CW_DEG=0,
         FLIPCODE=1,
         ANGLE_TRIANGLE=math.radians(60),
