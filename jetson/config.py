@@ -51,6 +51,8 @@ class Config:
     SEND_COMMANDS=get_bool('SEND_COMMANDS',True)
     COMMAND_COOLDOWN=get_float('COMMAND_COOLDOWN',0.3)
     MOVEMENT_DURATION=get_float('MOVEMENT_DURATION',0.05)
+    MOVEMENT_DURATION_R=get_float('MOVEMENT_DURATION_R',0.03)
+    MOVEMENT_DURATION_L=get_float('MOVEMENT_DURATION_L',0.03)
 
     # Static stop
     DEBUG_STATIC=get_bool('DEBUG_STATIC', False)
@@ -87,6 +89,8 @@ def reload_all_env(dotenv_path):
         "SEND_COMMANDS": _bool("SEND_COMMANDS", True),
         "COMMAND_COOLDOWN": _float("COMMAND_COOLDOWN", 0.3),
         "MOVEMENT_DURATION": _float("MOVEMENT_DURATION", 0.05),
+        "MOVEMENT_DURATION_L": _float("MOVEMENT_DURATION_L", 0.03),
+        "MOVEMENT_DURATION_R": _float("MOVEMENT_DURATION_R", 0.03),
         
         'DEBUG_STATIC': _bool('DEBUG_STATIC',False),
         'THR_MODE': _text('THR_MODE', 'fixed'),

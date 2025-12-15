@@ -173,6 +173,8 @@ def main():
     SEND_COMMANDS = Config.SEND_COMMANDS
     COMMAND_COOLDOWN = Config.COMMAND_COOLDOWN
     MOVEMENT_DURATION = Config.MOVEMENT_DURATION
+    MOVEMENT_DURATION_R = Config.MOVEMENT_DURATION_R
+    MOVEMENT_DURATION_L = Config.MOVEMENT_DURATION_L
     
     DEBUG_STATIC=Config.DEBUG_STATIC
     THR_MODE=Config.THR_MODE
@@ -307,6 +309,8 @@ def main():
                 SEND_COMMANDS = cfg["SEND_COMMANDS"]
                 COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
                 MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
+                MOVEMENT_DURATION_L=cfg["MOVEMENT_DURATION_L"]
+                MOVEMENT_DURATION_R=cfg["MOVEMENT_DURATION_R"]
 
                 DEBUG_STATIC=cfg['DEBUG_STATIC']
                 THR_MODE=cfg['THR_MODE']
@@ -350,7 +354,7 @@ def main():
             frame = rotate(frame, roi_helper.ROTATE_CW_DEG)
             frame = cv.flip(frame, roi_helper.FLIPCODE)
             frame = cv.resize(frame, (roi_helper.W, roi_helper.H))
-
+            frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
             if USE_BLUR:
                 frame = cv.medianBlur(frame, BLUR_KSIZE)
             start_t = time.time()
@@ -395,10 +399,10 @@ def main():
                         command_to_send = f"right {MOVEMENT_DURATION}"
                     elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
                         cond = 'LEFT'
-                        command_to_send = f"left {MOVEMENT_DURATION}"
+                        command_to_send = f"left {MOVEMENT_DURATION_L}"
                     else:
                         cond = 'FORWARD'
-                        command_to_send = f"forward {MOVEMENT_DURATION}"
+                        command_to_send = f"forward {MOVEMENT_DURATION_R}"
                     
                     print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')
                     
@@ -420,8 +424,9 @@ def main():
             # === PREPARE OUTPUT VIDEO ===
             nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
             nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
+            vis_s = cv.cvtColor(vis, cv.COLOR_GRAY2BGR)
 
-            vis_s = cv.resize(vis, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
+            vis_s = cv.resize(vis_s, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             nf_s = cv.resize(nf_color, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             nd_s = cv.resize(nd_color, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             combined = np.hstack((vis_s, nf_s, nd_s))
@@ -437,7 +442,7 @@ def main():
             log_msg = (
                 f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
                 f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
-                f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms | "
+                f"fill={dbg['fill']:.2f} | thr={dbg['threshold']} | elapsed={elapsed_ms:.1f}ms | "
                 f"angle: {angle_est} | angle_deg: {np.rad2deg(angle_est) if angle_est else None} | "
                 f"Turn: {cond} | Command: {command_to_send}"
             )

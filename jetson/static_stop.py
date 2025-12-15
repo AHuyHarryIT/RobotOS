@@ -9,7 +9,7 @@ class StaticParams:
                  THR_L=135,
                  THR_OFFSET=2,
                  ILLUM_NORM="none",      # "none" | "flatfield" | "clahe"
-                 NORM_BLUR_K=41,         # large odd kernel for flatfield
+                 NORM_BLUR_K=101,         # large odd kernel for flatfield
                  NORM_EPS=1e-6,
                  CLAHE_CLIP=2.0,
                  CLAHE_TILE=8,
@@ -64,7 +64,7 @@ class StaticParams:
 
         # fallback
         return L_roi
-    def compute_thr_L(self, L_img, roi_mask=None):
+    def compute_thr(self, L_img, roi_mask=None):
         """
         Return threshold for LAB L channel (0..255).
 
@@ -88,12 +88,13 @@ class StaticParams:
             return int(np.clip(self.THR_L, 0, 255))
 
         # Robust range: percentiles instead of min/max (handles glare/noise)
-        lo = np.percentile(vals, 10)
-        hi = np.percentile(vals, 90)
+        lo = np.percentile(vals, 5)
+        hi = np.percentile(vals, 30)
+        print(lo,hi)
         if hi <= lo:
             return int(np.clip(self.THR_L, 0, 255))
 
-        thr = int((lo + hi) / 2.0) + int(self.THR_OFFSET)
+        thr = int((lo + hi) / 2.0) - int(self.THR_OFFSET)
         return int(np.clip(thr, 0, 255))
 
 # ---------- DEBUG HELPERS----------
@@ -126,17 +127,14 @@ def _passes_shape_filters(w, h, area, p: StaticParams):
 
     return passed,fill,elong
 
-def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = StaticParams()):
+def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = StaticParams()):
     """
     Static obstacle check with FIXED L* threshold and shape filters.
     Returns: (stop: bool, bbox: (x,y,w,h) or None, debug dict)
     """
-    lab = cv.cvtColor(frame_bgr, cv.COLOR_BGR2LAB)
-    L = lab[:, :, 0]
-
-    L_norm = params.normalize_L(L, roi_mask)   # NEW: normalize illumination
-    thr = params.compute_thr_L(L_norm)         # compute threshold on normalized
-    _, floor = cv.threshold(L_norm, thr, 255, cv.THRESH_BINARY)
+    blur=cv.GaussianBlur(frame_ori, (params.NORM_BLUR_K, params.NORM_BLUR_K), 0.25)
+    thr = params.compute_thr(blur)
+    _, floor = cv.threshold(frame_ori, thr, 255, cv.THRESH_BINARY)
 
     nonfloor = cv.bitwise_not(floor)
 
@@ -152,7 +150,7 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
     roi_pix = max(1, int(np.count_nonzero(roi_mask)))
     
     # Checking when the number of unwanted pixels exceed the satisfied ones
-    print(f'[LOG] THRESHOLD {thr}')
+    # print(f'[LOG] THRESHOLD {thr}')
     if int(np.count_nonzero(nf_danger))>=int(np.count_nonzero(nf_danger==0)):
         print('[Static] Detected pixels exceed the maximum area allowed! -> STOP')
         debug = {
@@ -160,6 +158,7 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
             "nf_danger": nf_danger,
             "area_pct": 0,
             "elong" : 0,
+            'threshold':None,
             "fill": 0
         }
         return True, None, debug
@@ -187,6 +186,7 @@ def static_stop_detect(frame_bgr, roi_mask, danger_mask, params: StaticParams = 
         "nf_danger": nf_danger,
         "area_pct": area_pct,
         "elong" : params_dbg[0] if params_dbg is not None else 0,
+        'threshold':thr,
         "fill": params_dbg[1] if params_dbg is not None else 0
     }
     return stop, best_bbox, debug

@@ -42,8 +42,7 @@ def convert_angle(flines): # just normalized angles, not converting
     return angles
 
 def detect_edges(frame, CANNY_T1, CANNY_T2, CANNY_APER):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, CANNY_T1, CANNY_T2, apertureSize=CANNY_APER)
+    edges = cv2.Canny(frame, CANNY_T1, CANNY_T2, apertureSize=CANNY_APER)
     return edges
 
 def detect_lines(edges, HOUGH_RHO, HOUGH_THETA, HOUGH_THRESH):
