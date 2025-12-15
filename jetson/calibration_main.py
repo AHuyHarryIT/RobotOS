@@ -28,8 +28,7 @@ from config import Config, reload_all_env
 
 
 # Import from AUTO_CAR_V2
-sys.path.insert(1, os.path.join(os.path.dirname(__file__), 'AUTO_CAR_V2'))
-PARENT_ENV=os.path.join(os.path.dirname(__file__), 'AUTO_CAR_V2')
+PARENT_ENV= os.path.dirname(__file__)
 DOTENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
 
 from ROI import ROI
@@ -293,16 +292,6 @@ def main():
 
     try:
         while True:
-            sp = StaticParams(DEBUG_STATIC=DEBUG_STATIC,
-                            THR_MODE=THR_MODE,
-                            THR_L=THR_L,
-                            THR_OFFSET=THR_OFFSET,
-                            MIN_AREA=MIN_AREA,
-                            MIN_THICK=MIN_THICK,
-                            ASPECT_MAX=ASPECT_MAX,
-                            LINE_AR_REJECT=LINE_AR_REJECT,
-                            LINE_FILL_MAX=LINE_FILL_MAX,
-                            AREA_PCT=AREA_PCT)
             # -------- PERIODIC ENV RELOAD --------
             now = time.time()
             if now - last_env_reload > ENV_RELOAD_INTERVAL:
@@ -329,7 +318,17 @@ def main():
                 LINE_AR_REJECT=cfg['LINE_AR_REJECT']
                 LINE_FILL_MAX=cfg['LINE_FILL_MAX']
                 AREA_PCT=cfg['AREA_PCT']
-
+                sp = StaticParams(DEBUG_STATIC=cfg['DEBUG_STATIC'],
+                                THR_MODE=cfg['THR_MODE'],
+                                THR_L=cfg['THR_L'],
+                                THR_OFFSET=cfg['THR_OFFSET'],
+                                MIN_AREA=cfg['MIN_AREA'],
+                                MIN_THICK=cfg['MIN_THICK'],
+                                ASPECT_MAX=cfg['ASPECT_MAX'],
+                                LINE_AR_REJECT=cfg['LINE_AR_REJECT'],
+                                LINE_FILL_MAX=cfg['LINE_FILL_MAX'],
+                                AREA_PCT=cfg['AREA_PCT'])
+                print(f'[DEBUG] SHOW WINDOWS {SHOW_DEBUG_WINDOWS}')
                 throttler.cooldown = COMMAND_COOLDOWN
 
                 print(f"[ENV RELOAD] STOP_HOLD_FRAMES={STOP_HOLD_FRAMES}, "

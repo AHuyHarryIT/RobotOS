@@ -2,7 +2,7 @@ from dotenv import load_dotenv, dotenv_values
 import os
 
 DOTENV_PATH=os.path.join(os.path.dirname(__file__),'.env')
-
+load_dotenv(dotenv_path=DOTENV_PATH, override=True)
 
 def get_int(key, default):
     return int(os.getenv(key, default))
@@ -14,7 +14,8 @@ def get_bool(key, default=False):
     return os.getenv(key, str(default)).lower() in ("1", "true", "yes")
 
 def get_text(key, default=''):
-    return os.getenv(key, default).lower()
+    return str(os.getenv(key, default)).lower()
+
 
 class Config:
     # Camera
@@ -52,7 +53,7 @@ class Config:
     MOVEMENT_DURATION=get_float('MOVEMENT_DURATION',0.05)
 
     # Static stop
-    DEBUG_STATIC=get_bool('DEBUG_STATIC')
+    DEBUG_STATIC=get_bool('DEBUG_STATIC', False)
     THR_MODE=get_text('THR_MODE')
     THR_L=get_int('THR_L',135)
     THR_OFFSET=get_int('THR_OFFSET', 2)

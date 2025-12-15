@@ -1,0 +1,7 @@
+=== Object Detection Log ===
+[2025-12-15 17:36:07] Frame 00001 | DETECT=True | HOLD=True(20) | x=151,y=125,w=270,h=351 | area%=52.56 | elong=1.30 | fill=0.43 | elapsed=116.1ms | angle: None | angle_deg: None | Turn: STOP | Command: stop
+[2025-12-15 17:36:13] Frame 00002 | DETECT=True | HOLD=True(20) | x=142,y=131,w=279,h=345 | area%=51.48 | elong=1.24 | fill=0.41 | elapsed=7.5ms | angle: None | angle_deg: None | Turn: STOP | Command: stop
+[2025-12-15 17:36:18] Frame 00003 | DETECT=True | HOLD=True(20) | x=52,y=127,w=369,h=349 | area%=59.61 | elong=1.06 | fill=0.36 | elapsed=5.3ms | angle: None | angle_deg: None | Turn: STOP | Command: stop
+[2025-12-15 17:36:23] Frame 00004 | DETECT=True | HOLD=True(20) | x=150,y=109,w=271,h=367 | area%=58.90 | elong=1.35 | fill=0.46 | elapsed=3.5ms | angle: None | angle_deg: None | Turn: STOP | Command: stop
+[2025-12-15 17:36:28] Frame 00005 | DETECT=True | HOLD=True(20) | x=131,y=215,w=290,h=261 | area%=58.47 | elong=1.11 | fill=0.60 | elapsed=4.9ms | angle: None | angle_deg: None | Turn: STOP | Command: stop
+[2025-12-15 17:36:33] Frame 00006 | DETECT=True | HOLD=True(20) | x=135,y=179,w=286,h=297 | area%=63.47 | elong=1.04 | fill=0.58 | elapsed=3.9ms | angle: None | angle_deg: None | Turn: STOP | Command: stop
