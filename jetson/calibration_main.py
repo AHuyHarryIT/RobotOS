@@ -174,8 +174,7 @@ def main():
     SEND_COMMANDS = Config.SEND_COMMANDS
     COMMAND_COOLDOWN = Config.COMMAND_COOLDOWN
     MOVEMENT_DURATION = Config.MOVEMENT_DURATION
-    MOVEMENT_DURATION_R = Config.MOVEMENT_DURATION_R
-    MOVEMENT_DURATION_L = Config.MOVEMENT_DURATION_L
+    MOVEMENT_DURATION_TURN = Config.MOVEMENT_DURATION_TURN
     
     DEBUG_STATIC=Config.DEBUG_STATIC
     THR_MODE=Config.THR_MODE
@@ -310,8 +309,7 @@ def main():
                 SEND_COMMANDS = cfg["SEND_COMMANDS"]
                 COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
                 MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
-                MOVEMENT_DURATION_L=cfg["MOVEMENT_DURATION_L"]
-                MOVEMENT_DURATION_R=cfg["MOVEMENT_DURATION_R"]
+                MOVEMENT_DURATION_TURN=cfg["MOVEMENT_DURATION_TURN"]
 
                 DEBUG_STATIC=cfg['DEBUG_STATIC']
                 THR_MODE=cfg['THR_MODE']
@@ -397,13 +395,13 @@ def main():
                     
                     if angle_est < np.pi/2 - np.deg2rad(ACCEPTANCE):
                         cond = 'RIGHT'
-                        command_to_send = f"right {MOVEMENT_DURATION}"
+                        command_to_send = f"right {MOVEMENT_DURATION_TURN}"
                     elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
                         cond = 'LEFT'
-                        command_to_send = f"left {MOVEMENT_DURATION_L}"
+                        command_to_send = f"left {MOVEMENT_DURATION_TURN}"
                     else:
                         cond = 'FORWARD'
-                        command_to_send = f"forward {MOVEMENT_DURATION_R}"
+                        command_to_send = f"forward {MOVEMENT_DURATION}"
                     
                     print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')
                     
