@@ -159,6 +159,7 @@ def main():
 
     CAM_DEVICE = Config.CAM_DEVICE
     VIDEO_PATH = Config.VIDEO_PATH
+    ROI_PT_PATH = Config.ROI_PT_PATH
     W = Config.W
     H = Config.H
     FPS = Config.FPS
@@ -203,7 +204,7 @@ def main():
 
     # Initialize ROI
     roi_helper = ROI(
-        saved_path="roi_points.txt",
+        saved_path=ROI_PT_PATH,
         ROTATE_CW_DEG=0,
         FLIPCODE=1,
         ANGLE_TRIANGLE=math.radians(60),

@@ -21,6 +21,7 @@ class Config:
     # Camera
     CAM_DEVICE = get_int("CAM_DEVICE", 0)
     VIDEO_PATH = os.getenv("VIDEO_PATH", "")
+    ROI_PT_PATH = os.getenv("ROI_PT_PATH","")
     W = get_int("FRAME_WIDTH", 640)
     H = get_int("FRAME_HEIGHT", 480)
     FPS = get_int("FPS", 30)

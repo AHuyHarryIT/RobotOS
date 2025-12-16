@@ -9,7 +9,7 @@ class StaticParams:
                  THR_L=135,
                  THR_OFFSET=2,
                  ILLUM_NORM="none",      # "none" | "flatfield" | "clahe"
-                 NORM_BLUR_K=101,         # large odd kernel for flatfield
+                 NORM_BLUR_K=3,         # large odd kernel for flatfield
                  NORM_EPS=1e-6,
                  CLAHE_CLIP=2.0,
                  CLAHE_TILE=8,
@@ -88,9 +88,9 @@ class StaticParams:
             return int(np.clip(self.THR_L, 0, 255))
 
         # Robust range: percentiles instead of min/max (handles glare/noise)
-        lo = np.percentile(vals, 5)
+        lo = np.percentile(vals, 1)
         hi = np.percentile(vals, 30)
-        print(lo,hi)
+        # print(lo,hi)
         if hi <= lo:
             return int(np.clip(self.THR_L, 0, 255))
 
