@@ -775,6 +775,11 @@
                 updateDashboardUI(data);
             });
             
+            socket.on('mode_changed', function(data) {
+                updateModeUI(data.mode);
+                console.log('Mode changed to:', data.mode);
+            });
+            
             socket.on('connect_error', function(error) {
                 console.error('WebSocket connection error:', error);
                 document.getElementById('errorMessage').style.display = 'block';
@@ -1066,10 +1071,7 @@
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', function() {
             initWebSocket();  // Start WebSocket connection for real-time updates
-            fetchCurrentMode();  // Fetch initial mode
-            
-            // Poll mode every 5 seconds (mode changes are less frequent)
-            setInterval(fetchCurrentMode, 5000);
+            fetchCurrentMode();  // Fetch initial mode once
         });
         
         // Clean up WebSocket connection on page unload

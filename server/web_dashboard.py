@@ -215,6 +215,12 @@ def change_mode():
         # Set new mode
         current_mode = new_mode
         
+        # Broadcast mode change to all connected clients (async to avoid blocking)
+        try:
+            socketio.emit('mode_changed', {'mode': current_mode}, broadcast=True)
+        except Exception as emit_error:
+            print(f"[Warning] Failed to emit mode_changed: {emit_error}")
+        
         # Note: Actual mode execution should be handled by background threads
         # This just tracks the requested mode
         
