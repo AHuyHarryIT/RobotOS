@@ -133,8 +133,10 @@ def controller_loop(sock):
     last_buttons = {}
     controller_connected = True
 
-    print("\n===== CONTROLLER MODE =====\")
-    print(\"D-pad: movement (hold for continuous)\")\n    print(\"A: unlock | B: lock | X: STOP | Y: demo sequence\")\n    print(\"Ctrl+C to return to menu.\\n\")
+    print("\n===== CONTROLLER MODE =====")
+    print("D-pad: movement (hold for continuous)")
+    print("A: unlock | B: lock | X: STOP | Y: demo sequence")
+    print("Ctrl+C to return to menu.\n")
 
     try:
         while True:
@@ -195,7 +197,23 @@ def controller_loop(sock):
                         last_hat_send_time = now
             else:
                 # D-pad held in same position -> repeat command
-                if (hat_x, ha B, X, Y) ---
+                if (hat_x, hat_y) != (0, 0):
+                    # Only repeat if D-pad is not neutral
+                    if (now - last_hat_send_time) >= REPEAT_HOLD_INTERVAL:
+                        cmd = map_hat_to_cmd(hat_x, hat_y)
+                        if cmd and (now - last_send_time) >= SEND_COOLDOWN:
+                            # Process through aggregator
+                            success, processed_cmd, msg = aggregator.process_command(
+                                command=cmd,
+                                source=CommandSource.CONTROLLER,
+                                priority=CommandPriority.NORMAL
+                            )
+                            if success and processed_cmd:
+                                send_command(sock, processed_cmd)
+                                last_send_time = now
+                                last_hat_send_time = now
+
+            # --- BUTTONS (A, B, X, Y) ---
             num_buttons = joystick.get_numbuttons()
             now_state = {}
             for i in range(num_buttons):
@@ -238,21 +256,7 @@ def controller_loop(sock):
 
             last_buttons = now_state
 
-            time.sleep(0.02)  # Small delay to reduce CPU usageame == "A":
-                        send_command(sock, "unlock")
-                    elif btn_name == "B":
-                        send_command(sock, "lock")
-                    elif btn_name == "X":
-                        send_command(sock, "stop")
-                    elif btn_name == "Y":
-                        seq_cmd = 'seq forward 1; right 1; backward 1; left 1; stop'
-                        send_command(sock, seq_cmd)
-
-                    last_send_time = now_btn
-
-            last_buttons = now_state
-
-            time.sleep(0.02)
+            time.sleep(0.02)  # Small delay to reduce CPU usage
 
     except KeyboardInterrupt:
         print("\n[CTRL] Controller mode interrupted, sending STOP and returning to menu...")
