@@ -4,11 +4,10 @@ Provides real-time statistics and command history visualization
 """
 import os
 import sys
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request
+from flask_socketio import SocketIO, emit
 from threading import Thread, Event
 import time
-import json
-from queue import Queue, Empty
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,6 +16,8 @@ from command_aggregator import get_aggregator, CommandSource, CommandPriority
 from config import RPI_IP, HEARTBEAT_PORT
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'robotos-secret-key-2025'
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Global state for heartbeat monitoring and ZMQ socket
 last_heartbeat_time = None
@@ -28,9 +29,8 @@ current_mode = "idle"  # idle, sequence, controller, server
 mode_active = False
 sequence_input_queue = []  # Queue for sequence commands from web
 
-# SSE event queue for broadcasting updates to clients
-event_queue = Queue()
-update_event = Event()  # Signal when new data is available
+# Event for signaling updates
+update_event = Event()
 
 
 def update_heartbeat_status():
@@ -76,65 +76,45 @@ def get_stats():
     })
 
 
-@app.route('/api/stream')
-def stream():
-    """
-    Server-Sent Events (SSE) endpoint for real-time updates.
-    Pushes data only when new commands are processed.
-    """
-    def event_stream():
-        # Send initial data
-        aggregator = get_aggregator()
-        stats = aggregator.get_stats()
-        history = aggregator.get_recent_history(count=20)
-        uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
-        uptime_str = format_uptime(uptime_seconds)
-        
-        data_dict = {
-            'stats': stats,
-            'history': history,
-            'uptime': uptime_str,
-            'rpi_connected': rpi_connected,
-            'last_heartbeat': last_heartbeat_time,
-            'timestamp': time.time()
-        }
-        yield f"data: {json.dumps(data_dict)}\n\n"
-        
-        # Track last command count to detect changes
-        last_total = stats.get('total_commands', 0)
-        
-        # Send updates when data changes
-        while True:
-            # Wait for update signal or timeout after 10 seconds
-            update_event.wait(timeout=10)
-            update_event.clear()
-            
-            # Get fresh data
-            stats = aggregator.get_stats()
-            current_total = stats.get('total_commands', 0)
-            
-            # Only send if there's a change or heartbeat update
-            if current_total != last_total:
-                history = aggregator.get_recent_history(count=20)
-                uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
-                uptime_str = format_uptime(uptime_seconds)
-                
-                data_dict = {
-                    'stats': stats,
-                    'history': history,
-                    'uptime': uptime_str,
-                    'rpi_connected': rpi_connected,
-                    'last_heartbeat': last_heartbeat_time,
-                    'timestamp': time.time()
-                }
-                yield f"data: {json.dumps(data_dict)}\n\n"
-                
-                last_total = current_total
-            else:
-                # Send heartbeat ping to keep connection alive
-                yield ": ping\n\n"
+# WebSocket event handlers
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    print(f"[WebSocket] Client connected: {request.sid}")
+    # Send initial data on connect
+    send_dashboard_update()
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection"""
+    print(f"[WebSocket] Client disconnected: {request.sid}")
+
+
+@socketio.on('request_update')
+def handle_request_update():
+    """Handle client request for dashboard update"""
+    send_dashboard_update()
+
+
+def send_dashboard_update():
+    """Send dashboard data to all connected clients"""
+    aggregator = get_aggregator()
+    stats = aggregator.get_stats()
+    history = aggregator.get_recent_history(count=20)
+    uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
+    uptime_str = format_uptime(uptime_seconds)
     
-    return Response(event_stream(), mimetype='text/event-stream')
+    data = {
+        'stats': stats,
+        'history': history,
+        'uptime': uptime_str,
+        'rpi_connected': rpi_connected,
+        'last_heartbeat': last_heartbeat_time,
+        'timestamp': time.time()
+    }
+    
+    socketio.emit('dashboard_update', data, broadcast=True)
 
 
 @app.route('/api/health')
@@ -172,8 +152,8 @@ def control():
             if zmq_socket:
                 from zmq_client import send_command
                 send_command(zmq_socket, processed_cmd)
-                # Trigger SSE update
-                update_event.set()
+                # Trigger WebSocket update
+                send_dashboard_update()
                 return jsonify({
                     'status': 'success',
                     'command': processed_cmd,
@@ -281,8 +261,8 @@ def sequence_command():
             if success and processed_cmd:
                 from zmq_client import send_command
                 send_command(zmq_socket, processed_cmd)
-                # Trigger SSE update
-                update_event.set()
+                # Trigger WebSocket update
+                send_dashboard_update()
                 return jsonify({
                     'status': 'success',
                     'command': processed_cmd,
@@ -339,10 +319,11 @@ def run_dashboard(host='0.0.0.0', port=5000, debug=False):
     print(f"{'='*60}")
     print(f"📊 Dashboard URL: http://{host}:{port}")
     print(f"🤖 Monitoring RPi: {RPI_IP}")
+    print(f"🔌 Using WebSocket for real-time updates")
     print(f"{'='*60}\n")
     
-    # Run Flask app
-    app.run(host=host, port=port, debug=debug, threaded=True)
+    # Run Flask app with SocketIO
+    socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
 
 
 def run_dashboard_background(host='0.0.0.0', port=5000, sock=None):
@@ -362,7 +343,7 @@ def run_dashboard_background(host='0.0.0.0', port=5000, sock=None):
     app.start_time = time.time()
     
     dashboard_thread = Thread(
-        target=lambda: app.run(host=host, port=port, debug=False, threaded=True),
+        target=lambda: socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True),
         daemon=True,
         name="WebDashboard"
     )
