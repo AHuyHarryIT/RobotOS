@@ -2,13 +2,16 @@
 """
 Command server running on miniPC client.
 Receives commands from external sources (Jetson, web API, etc.) via ZMQ REP socket.
-Forwards commands to RPi for GPIO execution.
+Processes commands through the central aggregator and forwards to RPi for GPIO execution.
+
+This server acts as the entry point for all Jetson vision commands.
 """
 import threading
 import time
 import zmq
 from zmq_client import send_command
 from config import CLIENT_SERVER_PORT
+from command_aggregator import get_aggregator, CommandSource, CommandPriority
 
 server_running = False
 server_thread = None
@@ -18,12 +21,15 @@ def command_server_loop(zmq_to_rpi_sock):
     """
     Main loop for command server.
     Binds REP socket to receive commands from Jetson/external sources.
-    Forwards received commands to RPi via zmq_to_rpi_sock.
+    Processes commands through aggregator and forwards to RPi.
     
     Args:
         zmq_to_rpi_sock: The ZMQ REQ socket connected to RPi (shared from main)
     """
     global server_running
+    
+    # Get the global command aggregator instance
+    aggregator = get_aggregator()
     
     ctx = zmq.Context.instance()
     server_sock = ctx.socket(zmq.REP)
@@ -32,6 +38,7 @@ def command_server_loop(zmq_to_rpi_sock):
     
     print(f"[CMD SERVER] Listening on {bind_addr} for external commands")
     print("[CMD SERVER] Ready to receive from Jetson, web API, etc.")
+    print("[CMD SERVER] All commands will be processed through central aggregator")
     
     server_running = True
     
@@ -40,16 +47,39 @@ def command_server_loop(zmq_to_rpi_sock):
             try:
                 # Set timeout to check server_running flag periodically
                 if server_sock.poll(timeout=500):  # 500ms timeout
-                    raw = server_sock.recv()
-                    payload = raw.decode("utf-8", errors="replace")
-                    print(f"[CMD SERVER] <- Received from external: {payload!r}")
+                    raw = servcommand through central aggregator
+                    # Jetson commands typically have high priority for autonomous control
+                    success, processed_cmd, msg = aggregator.process_command(
+                        command=payload,
+                        source=CommandSource.JETSON,
+                        priority=CommandPriority.HIGH
+                    )
                     
-                    # Process the command (add any filtering/validation logic here)
-                    processed_cmd = payload.strip()
-                    
-                    # Forward to RPi
-                    try:
-                        send_command(zmq_to_rpi_sock, processed_cmd)
+                    if success and processed_cmd:
+                        # Forward validated command to RPi
+                        try:
+                            send_command(zmq_to_rpi_sock, processed_cmd)
+                            reply = {
+                                "status": "ok", 
+                                "cmd": processed_cmd, 
+                                "original": payload,
+                                "forwarded": True,
+                                "message": msg
+                            }
+                        except Exception as e:
+                            print(f"[CMD SERVER] Error forwarding to RPi: {e}")
+                            reply = {
+                                "status": "error", 
+                                "error": str(e), 
+                                "forwarded": False
+                            }
+                    else:
+                        # Command validation failed
+                        reply = {
+                            "status": "error",
+                            "error": msg,
+                            "forwarded": False
+                        
                         reply = {"status": "ok", "cmd": processed_cmd, "forwarded": True}
                     except Exception as e:
                         print(f"[CMD SERVER] Error forwarding to RPi: {e}")
