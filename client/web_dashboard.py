@@ -21,6 +21,11 @@ last_heartbeat_time = None
 rpi_connected = False
 zmq_socket = None  # Will be set when dashboard is started
 
+# Mode control state
+current_mode = "idle"  # idle, sequence, controller, server
+mode_active = False
+sequence_input_queue = []  # Queue for sequence commands from web
+
 
 def update_heartbeat_status():
     """
@@ -122,6 +127,108 @@ def control():
             'status': 'error',
             'message': str(e)
         }), 500
+
+
+@app.route('/api/mode', methods=['GET'])
+def get_mode():
+    """Get current mode and status"""
+    return jsonify({
+        'mode': current_mode,
+        'active': mode_active,
+        'available_modes': ['idle', 'sequence', 'controller', 'server']
+    })
+
+
+@app.route('/api/mode/change', methods=['POST'])
+def change_mode():
+    """
+    Change operation mode
+    Modes: idle, sequence, controller, server
+    """
+    global current_mode, mode_active
+    
+    try:
+        data = request.get_json()
+        new_mode = data.get('mode', '').strip().lower()
+        
+        valid_modes = ['idle', 'sequence', 'controller', 'server']
+        if new_mode not in valid_modes:
+            return jsonify({
+                'status': 'error',
+                'message': f'Invalid mode. Must be one of: {valid_modes}'
+            }), 400
+        
+        # Stop current mode if active
+        if mode_active:
+            mode_active = False
+            time.sleep(0.5)  # Give time to stop
+        
+        # Set new mode
+        current_mode = new_mode
+        
+        # Note: Actual mode execution should be handled by background threads
+        # This just tracks the requested mode
+        
+        return jsonify({
+            'status': 'success',
+            'mode': current_mode,
+            'message': f'Mode changed to {new_mode}'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/sequence', methods=['POST'])
+def sequence_command():
+    """
+    Send command in sequence mode
+    Adds command to queue for processing
+    """
+    global sequence_input_queue
+    
+    try:
+        data = request.get_json()
+        command = data.get('command', '').strip()
+        
+        if not command:
+            return jsonify({'status': 'error', 'message': 'No command provided'}), 400
+        
+        # Add to sequence queue
+        sequence_input_queue.append(command)
+        
+        # Also execute immediately if we have socket
+        if zmq_socket:
+            aggregator = get_aggregator()
+            success, processed_cmd, msg = aggregator.process_command(
+                command=command,
+                source=CommandSource.MANUAL,
+                priority=CommandPriority.NORMAL
+            )
+            
+            if success and processed_cmd:
+                from zmq_client import send_command
+                send_command(zmq_socket, processed_cmd)
+                return jsonify({
+                    'status': 'success',
+                    'command': processed_cmd,
+                    'message': 'Command executed'
+                })
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Command queued'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 
 
 def format_uptime(seconds):

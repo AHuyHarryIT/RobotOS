@@ -347,6 +347,102 @@
             color: #991b1b;
             display: block;
         }
+        
+        /* Mode Selector Styles */
+        .mode-selector {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        
+        .mode-selector h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .mode-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .mode-btn {
+            padding: 15px 25px;
+            font-size: 1em;
+            font-weight: 600;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+            color: #667eea;
+        }
+        
+        .mode-btn:hover {
+            background: #f3f4f6;
+            transform: translateY(-2px);
+        }
+        
+        .mode-btn.active {
+            background: #667eea;
+            color: white;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        .current-mode-status {
+            padding: 12px;
+            border-radius: 8px;
+            background: #f3f4f6;
+            text-align: center;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .sequence-input-box {
+            display: none;
+            margin-top: 15px;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+        
+        .sequence-input-box.active {
+            display: block;
+        }
+        
+        .sequence-input-box input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 1em;
+            margin-bottom: 10px;
+        }
+        
+        .sequence-input-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .sequence-send-btn {
+            width: 100%;
+            padding: 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .sequence-send-btn:hover {
+            background: #5568d3;
+        }
     </style>
 </head>
 <body>
@@ -371,6 +467,39 @@
         
         <div class="error-message" id="errorMessage">
             ⚠️ Unable to connect to server. Retrying...
+        </div>
+        
+        <!-- Mode Selector -->
+        <div class="mode-selector">
+            <h3>🎯 Operation Mode</h3>
+            <div class="mode-buttons">
+                <button class="mode-btn" data-mode="idle" onclick="changeMode('idle')">
+                    🏠 Idle
+                </button>
+                <button class="mode-btn" data-mode="sequence" onclick="changeMode('sequence')">
+                    📝 Sequence Mode
+                </button>
+                <button class="mode-btn" data-mode="controller" onclick="changeMode('controller')">
+                    🎮 Controller Mode
+                </button>
+                <button class="mode-btn" data-mode="server" onclick="changeMode('server')">
+                    🖥️ Server Only
+                </button>
+            </div>
+            <div class="current-mode-status" id="modeStatus">
+                Current Mode: <span id="currentMode">Loading...</span>
+            </div>
+            
+            <!-- Sequence Input Box -->
+            <div class="sequence-input-box" id="sequenceInputBox">
+                <input type="text" 
+                       id="sequenceInput" 
+                       placeholder="Enter command (e.g., forward 2, seq forward 1; right 0.5; stop)"
+                       onkeypress="handleSequenceEnter(event)">
+                <button class="sequence-send-btn" onclick="sendSequenceCommand()">
+                    📤 Send Command
+                </button>
+            </div>
         </div>
         
         <div class="grid">
@@ -451,6 +580,107 @@
         // Update dashboard data every second
         const UPDATE_INTERVAL = 1000;
         let lastCommandCount = 0;
+        let currentModeGlobal = 'idle';
+        
+        // Change operation mode
+        function changeMode(mode) {
+            fetch('/api/mode/change', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ mode: mode })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    updateModeUI(mode);
+                    console.log('Mode changed to:', mode);
+                } else {
+                    alert('Error changing mode: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error changing mode:', error);
+                alert('Failed to change mode');
+            });
+        }
+        
+        // Update mode UI
+        function updateModeUI(mode) {
+            currentModeGlobal = mode;
+            
+            // Update button states
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                if (btn.dataset.mode === mode) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            
+            // Update status text
+            document.getElementById('currentMode').textContent = mode.toUpperCase();
+            
+            // Show/hide sequence input box
+            const sequenceBox = document.getElementById('sequenceInputBox');
+            if (mode === 'sequence') {
+                sequenceBox.classList.add('active');
+            } else {
+                sequenceBox.classList.remove('active');
+            }
+        }
+        
+        // Fetch current mode
+        function fetchCurrentMode() {
+            fetch('/api/mode')
+                .then(response => response.json())
+                .then(data => {
+                    updateModeUI(data.mode);
+                })
+                .catch(error => {
+                    console.error('Error fetching mode:', error);
+                });
+        }
+        
+        // Send sequence command
+        function sendSequenceCommand() {
+            const input = document.getElementById('sequenceInput');
+            const command = input.value.trim();
+            
+            if (!command) {
+                alert('Please enter a command');
+                return;
+            }
+            
+            fetch('/api/sequence', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ command: command })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    input.value = '';  // Clear input
+                    console.log('Command sent:', command);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error sending command:', error);
+                alert('Failed to send command');
+            });
+        }
+        
+        // Handle Enter key in sequence input
+        function handleSequenceEnter(event) {
+            if (event.key === 'Enter') {
+                sendSequenceCommand();
+            }
+        }
         
         // Send control command to server
         function sendCommand(command) {
@@ -577,11 +807,13 @@
                 });
         }
         
-        // Initial update
+        // Initial updates
+        fetchCurrentMode();  // Fetch current mode on load
         updateDashboard();
         
         // Set up periodic updates
         setInterval(updateDashboard, UPDATE_INTERVAL);
+        setInterval(fetchCurrentMode, 5000);  // Update mode every 5 seconds
     </script>
 </body>
 </html>
