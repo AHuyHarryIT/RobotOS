@@ -34,7 +34,7 @@
 ║             └────────────────────────┼───────────────────────┘             ║
 ║                                      ▼                                      ║
 ║                          ┌───────────────────────┐                         ║
-║                          │   client_main.py      │                         ║
+║                          │       main.py         │                         ║
 ║                          │   Central Coordinator │                         ║
 ║                          │   - Route commands    │                         ║
 ║                          │   - Decision logic    │                         ║

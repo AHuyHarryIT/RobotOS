@@ -114,7 +114,7 @@ def control():
             else:
                 return jsonify({
                     'status': 'error',
-                    'message': 'ZMQ socket not initialized. Start dashboard from client_main.py'
+                    'message': 'ZMQ socket not initialized. Start dashboard from main.py'
                 }), 503
         else:
             return jsonify({

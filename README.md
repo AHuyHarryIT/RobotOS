@@ -34,8 +34,8 @@ A distributed robotics control system for an RC car with **three-tier architectu
 
 ```
 RobotOS/
-├── client/              # miniPC client (Brain)
-│   ├── client_main.py         # Main entry point
+├── server/              # miniPC server (Brain)
+│   ├── main.py                # Main entry point
 │   ├── command_aggregator.py  # Central command processing hub
 │   ├── command_server.py      # Receives from Jetson
 │   ├── controller_mode.py     # Xbox gamepad control
@@ -75,8 +75,8 @@ nano .env  # Set RPI_HOST, CLIENT_IP, etc.
 
 ### 3. Start Client (Brain)
 ```bash
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 ```
 
 ### 4. Setup Jetson (Optional for autonomous mode)

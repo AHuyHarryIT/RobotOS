@@ -29,7 +29,7 @@ RPI_IMAGE="${RPI_BASE}:${VERSION}"
 echo "[UPDATE] VERSION=${VERSION}"
 
 # Sync .env
-cp .env client/.env
+cp .env server/.env
 cp .env rpi/.env
 
 # 1) Rebuild client image & restart client container

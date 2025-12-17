@@ -34,11 +34,11 @@ if command -v systemctl &>/dev/null; then
   sudo systemctl start docker || true
 fi
 
-### ==== 2. Tạo client/.env nếu chưa có ====
-CLIENT_ENV="client/.env"
-if [ ! -f "$CLIENT_ENV" ]; then
-  echo "[SETUP] Tạo client/.env với default…"
-  cat > "$CLIENT_ENV" <<EOF
+### ==== 2. Tạo server/.env nếu chưa có ====
+SERVER_ENV="server/.env"
+if [ ! -f "$SERVER_ENV" ]; then
+  echo "[SETUP] Tạo server/.env với default…"
+  cat > "$SERVER_ENV" <<EOF
 RPI_IP=${RPI_HOST}
 ZMQ_PORT=${ZMQ_PORT}
 DUR_FORWARD=0.5
@@ -47,12 +47,12 @@ DUR_TURN=0.3
 SEND_COOLDOWN=0.05
 EOF
 else
-  echo "[SETUP] client/.env đã tồn tại, giữ nguyên."
+  echo "[SETUP] server/.env đã tồn tại, giữ nguyên."
 fi
 
 ### ==== 3. Build & chạy Docker client trên miniPC ====
 echo "[SETUP] Build Docker image cho xbox_client (miniPC)…"
-docker build -t "${CLIENT_IMAGE}" ./client
+docker build -t "${CLIENT_IMAGE}" ./server
 
 echo "[SETUP] Start container client bằng docker-compose…"
 (
@@ -115,4 +115,4 @@ EOF
 echo "[SETUP] DONE."
 echo "  - Client docker (xbox) đang chạy trên miniPC."
 echo "  - Server docker (zmq_server + GPIO) đang chạy trên RPi."
-echo "Bạn có thể đổi IP/port bằng env hoặc sửa client/.env rồi chạy lại script."
+echo "Bạn có thể đổi IP/port bằng env hoặc sửa server/.env rồi chạy lại script."

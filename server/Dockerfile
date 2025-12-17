@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY *.py .
 
 # .env sẽ được mount từ ngoài (hoặc env_file trong compose)
-CMD ["python", "client_main.py"]
+CMD ["python", "main.py"]

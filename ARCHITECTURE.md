@@ -91,11 +91,11 @@ cp .env.example .env
 nano .env  # Configure RPI_HOST, CLIENT_IP, etc.
 
 # Build and run
-docker-compose -f client/docker-compose.yml up -d
+docker-compose -f server/docker-compose.yml up -d
 
 # Or run locally for testing
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 ```
 
 ### 2. Deploy RPi Server
@@ -127,8 +127,8 @@ python3 vision_client.py interactive
 ### Test 1: Client → RPi Connection
 ```bash
 # On miniPC
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 
 # Choose mode 1 (Sequence mode)
 # Try: forward 1
@@ -149,7 +149,7 @@ python3 vision_client.py demo
 ### Test 3: Parallel Control (Advanced)
 ```bash
 # Terminal 1 (miniPC): Run client with controller mode
-python3 client_main.py
+python3 main.py
 # Choose mode 2 (Controller)
 
 # Terminal 2 (Jetson): Send vision commands

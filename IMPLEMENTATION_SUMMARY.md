@@ -21,7 +21,7 @@ The system has been restructured from a 2-tier (Client→RPi) to a **3-tier arch
 ## 📁 New Files Created
 
 ### Client (miniPC)
-- **`client/command_server.py`** - Background server that receives commands from Jetson
+- **`server/command_server.py`** - Background server that receives commands from Jetson
   - Binds ZMQ REP socket on port 5557
   - Forwards all commands to RPi
   - Thread-safe operation
@@ -44,12 +44,12 @@ The system has been restructured from a 2-tier (Client→RPi) to a **3-tier arch
 ## 🔧 Modified Files
 
 ### Client
-- **`client/client_main.py`**
+- **`server/main.py`**
   - Added command server startup on initialization
   - Added "Server Only Mode" option (option 3)
   - Command server runs in background thread
 
-- **`client/config.py`**
+- **`server/config.py`**
   - Added `CLIENT_SERVER_PORT` (5557) for Jetson connections
 
 ### Jetson
@@ -109,16 +109,16 @@ elif lane_detected == "right":
 
 ### Test 1: Client → RPi (Existing Functionality)
 ```bash
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 # Choose option 1 or 2 - should work as before
 ```
 
 ### Test 2: Jetson → Client → RPi (New Chain)
 ```bash
 # Terminal 1 (miniPC): Start client
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 # Choose option 3 (Server only mode)
 
 # Terminal 2 (Jetson): Send commands
@@ -142,7 +142,7 @@ vision> stop
 - [ ] Set `RPI_HOST` to Raspberry Pi IP
 - [ ] Set `CLIENT_IP` to miniPC IP (for Jetson)
 - [ ] Deploy RPi using `./setup_auto_bot.sh`
-- [ ] Start client with `python3 client_main.py`
+- [ ] Start client with `python3 main.py`
 - [ ] On Jetson: copy `jetson/.env.example` to `jetson/.env`
 - [ ] On Jetson: set `CLIENT_IP` in `.env`
 - [ ] Test Jetson connection with `python3 vision_client.py demo`

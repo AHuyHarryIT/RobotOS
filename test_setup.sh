@@ -38,9 +38,9 @@ echo ""
 # Test 2: Check Python files
 echo "Test 2: Core Python Files"
 files=(
-    "client/client_main.py"
-    "client/command_server.py"
-    "client/zmq_client.py"
+    "server/main.py"
+    "server/command_server.py"
+    "server/zmq_client.py"
     "rpi/zmq_server.py"
     "rpi/gpio_driver.py"
     "jetson/vision_client.py"
@@ -57,10 +57,10 @@ echo ""
 
 # Test 3: Check configurations
 echo "Test 3: Configuration Files"
-if [ -f "client/config.py" ] && grep -q "CLIENT_SERVER_PORT" client/config.py; then
-    echo -e "  ${GREEN}✓${NC} Client config has CLIENT_SERVER_PORT"
+if [ -f "server/config.py" ] && grep -q "CLIENT_SERVER_PORT" server/config.py; then
+    echo -e "  ${GREEN}✓${NC} Server config has CLIENT_SERVER_PORT"
 else
-    echo -e "  ${RED}✗${NC} Client config missing CLIENT_SERVER_PORT"
+    echo -e "  ${RED}✗${NC} Server config missing CLIENT_SERVER_PORT"
 fi
 
 if [ -f "jetson/.env.example" ]; then
@@ -138,7 +138,7 @@ echo ""
 echo "Next Steps:"
 echo "1. Configure .env file with correct IPs"
 echo "2. Deploy RPi: ./setup_auto_bot.sh"
-echo "3. Start client: cd client/ && python3 client_main.py"
+echo "3. Start client: cd server/ && python3 main.py"
 echo "4. Setup Jetson: cd jetson/ && cp .env.example .env"
 echo ""
 echo "For more info, see QUICKSTART.md"

@@ -100,7 +100,7 @@ Receives commands from Jetson vision system via ZMQ REP socket on port 5557.
 - Emergency stop (X button) has HIGH priority
 - Regular movements have NORMAL priority
 
-### 4. Client Main (`client_main.py`)
+### 4. Server Main (`main.py`)
 
 Enhanced menu with new statistics option:
 
@@ -127,8 +127,8 @@ q. Exit
 ### Starting the Client
 
 ```bash
-cd client
-python3 client_main.py
+cd server
+python3 main.py
 ```
 
 The command server starts automatically in the background, listening for Jetson commands.

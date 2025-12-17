@@ -8,14 +8,14 @@ The dashboard provides a visual interface for monitoring RobotOS activity.
 
 #### Method 1: From Client Menu
 ```bash
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 # Select option 4 (Web Dashboard)
 ```
 
 #### Method 2: Run Standalone
 ```bash
-cd client/
+cd server/
 python3 web_dashboard.py
 ```
 
@@ -63,7 +63,7 @@ Dashboard automatically refreshes every **1 second** to display the latest data.
 To test the dashboard without needing an RPi connection:
 
 ```bash
-cd client/
+cd server/
 
 # Step 1: Generate test data
 python3 test_dashboard.py
