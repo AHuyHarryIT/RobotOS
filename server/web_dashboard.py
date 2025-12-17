@@ -54,7 +54,7 @@ def get_stats():
     stats = aggregator.get_stats()
     
     # Get recent command history (last 20 commands)
-    history = aggregator.get_recent_history(limit=20)
+    history = aggregator.get_recent_history(count=20)
     
     # Calculate uptime (placeholder - would need actual tracking)
     uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
