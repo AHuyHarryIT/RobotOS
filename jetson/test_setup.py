@@ -51,18 +51,18 @@ def test_env_file():
     print(f"✅ .env file exists")
     
     load_dotenv()
-    client_ip = os.getenv("CLIENT_IP")
-    client_port = os.getenv("CLIENT_PORT")
+    server_ip = os.getenv("SERVER_IP")
+    server_port = os.getenv("SERVER_PORT")
     
-    if not client_ip:
-        print(f"❌ CLIENT_IP not set in .env")
+    if not server_ip:
+        print(f"❌ SERVER_IP not set in .env")
         return False
-    print(f"✅ CLIENT_IP = {client_ip}")
+    print(f"✅ SERVER_IP = {server_ip}")
     
-    if not client_port:
-        print(f"❌ CLIENT_PORT not set in .env")
+    if not server_port:
+        print(f"❌ SERVER_PORT not set in .env")
         return False
-    print(f"✅ CLIENT_PORT = {client_port}")
+    print(f"✅ SERVER_PORT = {server_port}")
     
     return True
 
@@ -153,9 +153,9 @@ def test_network():
         from dotenv import load_dotenv
         
         load_dotenv()
-        client_ip = os.getenv("CLIENT_IP", "192.168.1.100")
-        client_port = os.getenv("CLIENT_PORT", "5557")
-        addr = f"tcp://{client_ip}:{client_port}"
+        server_ip = os.getenv("SERVER_IP", "192.168.1.100")
+        server_port = os.getenv("SERVER_PORT", "5557")
+        addr = f"tcp://{server_ip}:{server_port}"
         
         print(f"Testing connection to {addr}...")
         
@@ -170,17 +170,17 @@ def test_network():
         reply = sock.recv()
         sock.close()
         
-        print(f"✅ Connected to client at {addr}")
+        print(f"✅ Connected to server at {addr}")
         print(f"   Reply: {reply.decode('utf-8')[:50]}")
         return True
         
     except zmq.Again:
-        print(f"❌ Connection timeout - client not responding")
-        print(f"   Is miniPC client running? Check docker ps on {client_ip}")
+        print(f"❌ Connection timeout - server not responding")
+        print(f"   Is miniPC server running? Check docker ps on {server_ip}")
         return False
     except Exception as e:
         print(f"❌ Connection failed: {e}")
-        print(f"   Check: ping {client_ip}")
+        print(f"   Check: ping {server_ip}")
         return False
 
 def main():

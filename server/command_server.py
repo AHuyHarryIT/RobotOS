@@ -10,7 +10,7 @@ import threading
 import time
 import zmq
 from zmq_client import send_command
-from config import CLIENT_SERVER_PORT
+from config import SERVER_PORT
 from command_aggregator import get_aggregator, CommandSource, CommandPriority
 
 server_running = False
@@ -33,7 +33,7 @@ def command_server_loop(zmq_to_rpi_sock):
     
     ctx = zmq.Context.instance()
     server_sock = ctx.socket(zmq.REP)
-    bind_addr = f"tcp://0.0.0.0:{CLIENT_SERVER_PORT}"
+    bind_addr = f"tcp://0.0.0.0:{SERVER_PORT}"
     server_sock.bind(bind_addr)
     
     print(f"[CMD SERVER] Listening on {bind_addr} for external commands")

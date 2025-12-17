@@ -5,8 +5,9 @@ services:
     build: .
     container_name: robotos-server
     env_file: .env
-    network_mode: host
     restart: unless-stopped
+    ports:
+      - "5000:5000"  # Web dashboard
     volumes:
       - ./data:/app/data  # Persist logs/data
     # Uncomment if using Xbox controller directly from container

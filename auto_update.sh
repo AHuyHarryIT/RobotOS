@@ -1,20 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Load environment variables from .env
 if [ -f .env ]; then
   # shellcheck disable=SC2046
-  export $(grep -v '^#' .env | xargs -d '\n')
+  set -a
+  # shellcheck disable=SC1091
+  source <(grep -E '^[A-Za-z_]' .env | sed 's/#.*$//')
+  set +a
 else
-  echo "[ERROR] .env not found"
+  echo "[ERROR] .env not found. Please copy .env.example to .env and configure it."
   exit 1
 fi
 
 PROJECT_NAME="${PROJECT_NAME:-auto-bot}"
-RPI_HOST="${RPI_HOST:-192.168.10.200}"
+RPI_IP="${RPI_IP:-192.168.10.200}"
 RPI_USER="${RPI_USER:-pi}"
 RPI_DEST_DIR="${RPI_DEST_DIR:-/home/pi/auto-bot-rpi}"
 
-CLIENT_BASE="${PROJECT_NAME}-client"
+SERVER_BASE="${PROJECT_NAME}-server"
 RPI_BASE="${PROJECT_NAME}-rpi"
 
 VERSION="$(date +%Y%m%d-%H%M%S)"
@@ -23,32 +27,31 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   VERSION="${VERSION}-${GIT_SHA}"
 fi
 
-CLIENT_IMAGE="${CLIENT_BASE}:${VERSION}"
+SERVER_IMAGE="${SERVER_BASE}:${VERSION}"
 RPI_IMAGE="${RPI_BASE}:${VERSION}"
 
 echo "[UPDATE] VERSION=${VERSION}"
 
-# Sync .env
+# Sync .env to server/ and rpi/ directories
+echo "[UPDATE] Syncing .env files..."
 cp .env server/.env
 cp .env rpi/.env
 
-# 1) Rebuild client image & restart client container
-echo "[UPDATE] Rebuild client image..."
-docker build -t "${CLIENT_IMAGE}" -t "${CLIENT_BASE}:latest" ./client
+# 1) Rebuild server image & restart server container
+echo "[UPDATE] Rebuilding server image..."
+docker build -t "${SERVER_IMAGE}" -t "${SERVER_BASE}:latest" ./server
 
-echo "[UPDATE] Restart client container..."
+echo "[UPDATE] Restarting server container..."
 (
-  cd client
+  cd server
   docker compose down || true
   docker compose up -d
 )
 
 # 2) Copy rpi code & rebuild image on RPi
-echo "[UPDATE] Copy rpi/ to RPi..."
-scp rpi/* "${RPI_USER}@${RPI_HOST}:${RPI_DEST_DIR}/"
-
-echo "[UPDATE] Rebuild & restart server on RPi..."
-ssh "${RPI_USER}@${RPI_HOST}" bash -s <<EOF
+echo "[UPDATE] Copying rpi/ to RPi..."
+scp -r rpi/* "${RPI_USER}@${RPI_IP}:${RPI_DEST_DIR}/"
+ssh "${RPI_USER}@${RPI_IP}" bash -s <<EOF
 set -e
 cd "${RPI_DEST_DIR}"
 sudo docker build -t "${RPI_IMAGE}" -t "${RPI_BASE}:latest" .

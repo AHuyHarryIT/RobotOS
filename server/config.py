@@ -23,12 +23,12 @@ load_dotenv()
 # ============================================================
 
 # RPi server address
-RPI_IP = os.getenv("RPI_IP", os.getenv("RPI_HOST", "192.168.10.200"))
+RPI_IP = os.getenv("RPI_IP", "192.168.10.200")
 
 # ZMQ ports
-ZMQ_PORT = int(os.getenv("ZMQ_PORT", "5555"))              # Client -> RPi command port
-HEARTBEAT_PORT = int(os.getenv("HEARTBEAT_PORT", "5556"))  # RPi -> Client heartbeat port
-CLIENT_SERVER_PORT = int(os.getenv("CLIENT_SERVER_PORT", "5557"))  # Jetson -> Client command port
+ZMQ_PORT = int(os.getenv("ZMQ_PORT", "5555"))              # Server -> RPi command port
+HEARTBEAT_PORT = int(os.getenv("HEARTBEAT_PORT", "5556"))  # RPi -> Server heartbeat port
+SERVER_PORT = int(os.getenv("SERVER_PORT", "5557"))  # Jetson -> Server command port
 
 # Build connection addresses
 ADDR = f"tcp://{RPI_IP}:{ZMQ_PORT}"          # Address for sending commands to RPi
