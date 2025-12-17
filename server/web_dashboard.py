@@ -99,22 +99,25 @@ def handle_request_update():
 
 def send_dashboard_update():
     """Send dashboard data to all connected clients"""
-    aggregator = get_aggregator()
-    stats = aggregator.get_stats()
-    history = aggregator.get_recent_history(count=20)
-    uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
-    uptime_str = format_uptime(uptime_seconds)
-    
-    data = {
-        'stats': stats,
-        'history': history,
-        'uptime': uptime_str,
-        'rpi_connected': rpi_connected,
-        'last_heartbeat': last_heartbeat_time,
-        'timestamp': time.time()
-    }
-    
-    socketio.emit('dashboard_update', data, broadcast=True)
+    try:
+        aggregator = get_aggregator()
+        stats = aggregator.get_stats()
+        history = aggregator.get_recent_history(count=20)
+        uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
+        uptime_str = format_uptime(uptime_seconds)
+        
+        data = {
+            'stats': stats,
+            'history': history,
+            'uptime': uptime_str,
+            'rpi_connected': rpi_connected,
+            'last_heartbeat': last_heartbeat_time,
+            'timestamp': time.time()
+        }
+        
+        socketio.emit('dashboard_update', data, broadcast=True)
+    except Exception as e:
+        print(f"[Warning] Failed to send dashboard update: {e}")
 
 
 @app.route('/api/health')
