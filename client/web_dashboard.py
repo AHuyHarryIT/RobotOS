@@ -4,21 +4,22 @@ Provides real-time statistics and command history visualization
 """
 import os
 import sys
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 from threading import Thread
 import time
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from command_aggregator import get_aggregator
-from config import RPI_HOST, HEARTBEAT_PORT
+from command_aggregator import get_aggregator, CommandSource, CommandPriority
+from config import RPI_IP, HEARTBEAT_PORT
 
 app = Flask(__name__)
 
-# Global state for heartbeat monitoring
+# Global state for heartbeat monitoring and ZMQ socket
 last_heartbeat_time = None
 rpi_connected = False
+zmq_socket = None  # Will be set when dashboard is started
 
 
 def update_heartbeat_status():
@@ -35,7 +36,7 @@ def update_heartbeat_status():
 @app.route('/')
 def index():
     """Render the main dashboard page"""
-    return render_template('index.html', rpi_host=RPI_HOST)
+    return render_template('index.html', rpi_host=RPI_IP)
 
 
 @app.route('/api/stats')
@@ -68,6 +69,59 @@ def get_stats():
 def health_check():
     """Simple health check endpoint"""
     return jsonify({'status': 'ok', 'service': 'RobotOS Dashboard'})
+
+
+@app.route('/api/control', methods=['POST'])
+def control():
+    """
+    API endpoint to send control commands from web interface
+    Accepts JSON with 'command' field
+    Processes through aggregator and forwards to RPi
+    """
+    try:
+        data = request.get_json()
+        command = data.get('command', '').strip()
+        
+        if not command:
+            return jsonify({'status': 'error', 'message': 'No command provided'}), 400
+        
+        # Get aggregator instance
+        aggregator = get_aggregator()
+        
+        # Process command through aggregator
+        success, processed_cmd, msg = aggregator.process_command(
+            command=command,
+            source=CommandSource.MANUAL,
+            priority=CommandPriority.HIGH if command == 'stop' else CommandPriority.NORMAL
+        )
+        
+        if success and processed_cmd:
+            # Send to RPi if socket is available
+            if zmq_socket:
+                from zmq_client import send_command
+                send_command(zmq_socket, processed_cmd)
+                return jsonify({
+                    'status': 'success',
+                    'command': processed_cmd,
+                    'original': command,
+                    'message': msg
+                })
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'ZMQ socket not initialized. Start dashboard from client_main.py'
+                }), 503
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': msg
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 
 def format_uptime(seconds):
@@ -106,14 +160,14 @@ def run_dashboard(host='0.0.0.0', port=5000, debug=False):
     print(f"🌐 RobotOS Web Dashboard Starting...")
     print(f"{'='*60}")
     print(f"📊 Dashboard URL: http://{host}:{port}")
-    print(f"🤖 Monitoring RPi: {RPI_HOST}")
+    print(f"🤖 Monitoring RPi: {RPI_IP}")
     print(f"{'='*60}\n")
     
     # Run Flask app
     app.run(host=host, port=port, debug=debug, threaded=True)
 
 
-def run_dashboard_background(host='0.0.0.0', port=5000):
+def run_dashboard_background(host='0.0.0.0', port=5000, sock=None):
     """
     Run the dashboard in a background thread
     Allows the dashboard to run alongside other client modes
@@ -121,9 +175,12 @@ def run_dashboard_background(host='0.0.0.0', port=5000):
     Args:
         host: Host IP to bind to
         port: Port to listen on
+        sock: ZMQ socket for sending commands to RPi (optional)
     Returns:
         Thread object running the dashboard
     """
+    global zmq_socket
+    zmq_socket = sock  # Store socket for control endpoint
     app.start_time = time.time()
     
     dashboard_thread = Thread(
@@ -134,6 +191,10 @@ def run_dashboard_background(host='0.0.0.0', port=5000):
     dashboard_thread.start()
     
     print(f"\n🌐 Web Dashboard started in background at http://{host}:{port}")
+    if sock:
+        print("📡 Web controls enabled - you can send commands from browser")
+    else:
+        print("⚠️  Web controls disabled - no ZMQ socket provided")
     return dashboard_thread
 
 

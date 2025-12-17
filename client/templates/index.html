@@ -268,6 +268,85 @@
         .history-list::-webkit-scrollbar-thumb:hover {
             background: #764ba2;
         }
+        
+        /* Control Panel Styles */
+        .control-panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        
+        .control-panel h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        
+        .control-btn {
+            padding: 20px;
+            font-size: 1.1em;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-transform: uppercase;
+        }
+        
+        .control-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+        }
+        
+        .control-btn:active {
+            transform: translateY(0);
+        }
+        
+        .control-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-forward { background: #10b981; grid-column: 2; }
+        .btn-backward { background: #8b5cf6; grid-column: 2; }
+        .btn-left { background: #3b82f6; grid-column: 1; grid-row: 2; }
+        .btn-right { background: #f59e0b; grid-column: 3; grid-row: 2; }
+        .btn-stop { background: #ef4444; grid-column: 1 / 4; }
+        .btn-lock { background: #6366f1; }
+        .btn-unlock { background: #14b8a6; }
+        
+        .control-status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+            display: none;
+        }
+        
+        .control-status.success {
+            background: #d1fae5;
+            color: #065f46;
+            display: block;
+        }
+        
+        .control-status.error {
+            background: #fee2e2;
+            color: #991b1b;
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -324,6 +403,35 @@
             </div>
         </div>
         
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <h3>🎮 Robot Controls</h3>
+            <div class="control-grid">
+                <button class="control-btn btn-forward" onclick="sendCommand('forward 0.5')">
+                    ⬆️ Forward
+                </button>
+                <button class="control-btn btn-left" onclick="sendCommand('left 0.3')">
+                    ⬅️ Left
+                </button>
+                <button class="control-btn btn-right" onclick="sendCommand('right 0.3')">
+                    ➡️ Right
+                </button>
+                <button class="control-btn btn-backward" onclick="sendCommand('backward 0.5')">
+                    ⬇️ Backward
+                </button>
+                <button class="control-btn btn-stop" onclick="sendCommand('stop')">
+                    🛑 STOP
+                </button>
+                <button class="control-btn btn-lock" onclick="sendCommand('lock 0.5')">
+                    🔒 Lock
+                </button>
+                <button class="control-btn btn-unlock" onclick="sendCommand('unlock')">
+                    🔓 Unlock
+                </button>
+            </div>
+            <div id="controlStatus" class="control-status"></div>
+        </div>
+        
         <div class="history-section">
             <h3>📜 Recent Command History</h3>
             <div class="history-list" id="historyList">
@@ -343,6 +451,50 @@
         // Update dashboard data every second
         const UPDATE_INTERVAL = 1000;
         let lastCommandCount = 0;
+        
+        // Send control command to server
+        function sendCommand(command) {
+            const statusDiv = document.getElementById('controlStatus');
+            const buttons = document.querySelectorAll('.control-btn');
+            
+            // Disable all buttons while sending
+            buttons.forEach(btn => btn.disabled = true);
+            
+            statusDiv.textContent = `Sending: ${command}...`;
+            statusDiv.className = 'control-status';
+            statusDiv.style.display = 'block';
+            
+            fetch('/api/control', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ command: command })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    statusDiv.textContent = `✓ Success: ${data.command}`;
+                    statusDiv.className = 'control-status success';
+                } else {
+                    statusDiv.textContent = `✗ Error: ${data.message}`;
+                    statusDiv.className = 'control-status error';
+                }
+                
+                // Re-enable buttons
+                buttons.forEach(btn => btn.disabled = false);
+                
+                // Hide status after 3 seconds
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 3000);
+            })
+            .catch(error => {
+                statusDiv.textContent = `✗ Network error: ${error.message}`;
+                statusDiv.className = 'control-status error';
+                buttons.forEach(btn => btn.disabled = false);
+            });
+        }
         
         function formatTimestamp(timestamp) {
             const date = new Date(timestamp * 1000);

@@ -71,7 +71,7 @@ def main():
         elif choice == "4":
             # Start web dashboard
             print("\n[WEB DASHBOARD] Starting web interface...")
-            dashboard_thread = run_dashboard_background(host='0.0.0.0', port=5000)
+            dashboard_thread = run_dashboard_background(host='0.0.0.0', port=5000, sock=sock)
             print("Dashboard is running at: http://localhost:5000")
             print("Access from other devices: http://<your-ip>:5000")
             print("\nPress Ctrl+C or 'q' to stop dashboard and return to menu")
