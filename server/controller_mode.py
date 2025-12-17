@@ -193,6 +193,11 @@ def controller_loop(sock):
                     )
                     if success and processed_cmd:
                         send_command(sock, processed_cmd)
+                        try:
+                            from web_dashboard import send_dashboard_update
+                            send_dashboard_update()
+                        except:
+                            pass
                         last_send_time = now
                         last_hat_send_time = now
             else:
@@ -210,6 +215,11 @@ def controller_loop(sock):
                             )
                             if success and processed_cmd:
                                 send_command(sock, processed_cmd)
+                                try:
+                                    from web_dashboard import send_dashboard_update
+                                    send_dashboard_update()
+                                except:
+                                    pass
                                 last_send_time = now
                                 last_hat_send_time = now
 
@@ -252,6 +262,11 @@ def controller_loop(sock):
                         )
                         if success and processed_cmd:
                             send_command(sock, processed_cmd)
+                            try:
+                                from web_dashboard import send_dashboard_update
+                                send_dashboard_update()
+                            except:
+                                pass
                             last_send_time = now_btn
 
             last_buttons = now_state

@@ -71,6 +71,14 @@ def command_server_loop(zmq_to_rpi_sock):
                         # Forward validated command to RPi
                         try:
                             send_command(zmq_to_rpi_sock, processed_cmd)
+                            
+                            # Trigger WebSocket update
+                            try:
+                                from web_dashboard import send_dashboard_update
+                                send_dashboard_update()
+                            except:
+                                pass  # Dashboard might not be running
+                            
                             reply = {
                                 "status": "ok", 
                                 "cmd": processed_cmd, 

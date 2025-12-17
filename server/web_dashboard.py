@@ -31,6 +31,17 @@ sequence_input_queue = []  # Queue for sequence commands from web
 
 # Event for signaling updates
 update_event = Event()
+background_update_thread = None
+
+
+def periodic_dashboard_update():
+    """Background thread to send periodic dashboard updates for uptime/heartbeat"""
+    while True:
+        time.sleep(5)  # Update every 5 seconds for uptime
+        try:
+            send_dashboard_update()
+        except Exception as e:
+            print(f"[Warning] Periodic update failed: {e}")
 
 
 def update_heartbeat_status():
@@ -115,7 +126,7 @@ def send_dashboard_update():
             'timestamp': time.time()
         }
         
-        socketio.emit('dashboard_update', data, broadcast=True)
+        socketio.emit('dashboard_update', data, namespace='/')
     except Exception as e:
         print(f"[Warning] Failed to send dashboard update: {e}")
 
@@ -220,7 +231,7 @@ def change_mode():
         
         # Broadcast mode change to all connected clients (async to avoid blocking)
         try:
-            socketio.emit('mode_changed', {'mode': current_mode}, broadcast=True)
+            socketio.emit('mode_changed', {'mode': current_mode}, namespace='/')
         except Exception as emit_error:
             print(f"[Warning] Failed to emit mode_changed: {emit_error}")
         
@@ -320,8 +331,14 @@ def run_dashboard(host='0.0.0.0', port=5000, debug=False):
         port: Port to listen on (default: 5000)
         debug: Enable Flask debug mode (default: False)
     """
+    global background_update_thread
+    
     # Record start time for uptime calculation
     app.start_time = time.time()
+    
+    # Start background update thread
+    background_update_thread = Thread(target=periodic_dashboard_update, daemon=True, name="PeriodicUpdater")
+    background_update_thread.start()
     
     print(f"\n{'='*60}")
     print(f"🌐 RobotOS Web Dashboard Starting...")
@@ -329,6 +346,7 @@ def run_dashboard(host='0.0.0.0', port=5000, debug=False):
     print(f"📊 Dashboard URL: http://{host}:{port}")
     print(f"🤖 Monitoring RPi: {RPI_IP}")
     print(f"🔌 Using WebSocket for real-time updates")
+    print(f"⏰ Periodic updates every 5 seconds")
     print(f"{'='*60}\n")
     
     # Run Flask app with SocketIO
@@ -347,9 +365,13 @@ def run_dashboard_background(host='0.0.0.0', port=5000, sock=None):
     Returns:
         Thread object running the dashboard
     """
-    global zmq_socket
+    global zmq_socket, background_update_thread
     zmq_socket = sock  # Store socket for control endpoint
     app.start_time = time.time()
+    
+    # Start background update thread
+    background_update_thread = Thread(target=periodic_dashboard_update, daemon=True, name="PeriodicUpdater")
+    background_update_thread.start()
     
     dashboard_thread = Thread(
         target=lambda: socketio.run(app, host=host, port=port, debug=False, allow_unsafe_werkzeug=True),

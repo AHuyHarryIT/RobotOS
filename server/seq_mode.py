@@ -72,5 +72,10 @@ def seq_console_loop(sock):
         if success and processed_cmd:
             # Send validated command to RPi
             send_command(sock, processed_cmd)
+            try:
+                from web_dashboard import send_dashboard_update
+                send_dashboard_update()
+            except:
+                pass
         else:
             print(f"[SEQ] Command rejected: {msg}")
