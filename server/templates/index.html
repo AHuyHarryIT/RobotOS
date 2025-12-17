@@ -738,7 +738,7 @@
         
         <div class="history-section">
             <h3>📜 Recent Command History</h3>
-            <div class="history-list" id="historyList">
+            <div class="history-list" id="commandHistory">
                 <p style="text-align: center; color: #999; padding: 20px;">
                     No commands yet...
                 </p>
@@ -752,10 +752,92 @@
     </div>
     
     <script>
-        // Update dashboard data every second
-        const UPDATE_INTERVAL = 1000;
+        // SSE connection for real-time updates
+        let eventSource = null;
         let lastCommandCount = 0;
         let currentModeGlobal = 'idle';
+        
+        // Initialize SSE connection
+        function initSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource('/api/stream');
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    updateDashboardUI(data);
+                } catch (e) {
+                    console.error('Error parsing SSE data:', e);
+                }
+            };
+            
+            eventSource.onerror = function(error) {
+                console.error('SSE connection error:', error);
+                // Reconnect after 5 seconds
+                setTimeout(() => {
+                    console.log('Reconnecting SSE...');
+                    initSSE();
+                }, 5000);
+            };
+            
+            console.log('SSE connection established');
+        }
+        
+        // Update UI with dashboard data
+        function updateDashboardUI(data) {
+            // Hide error message on successful connection
+            document.getElementById('errorMessage').style.display = 'none';
+            
+            // Update connection status
+            const statusIndicator = document.getElementById('statusIndicator');
+            statusIndicator.className = 'status-indicator ' + 
+                (data.rpi_connected ? 'status-connected' : 'status-disconnected');
+            
+            // Update stats
+            document.getElementById('totalCommands').textContent = 
+                data.stats.total_commands || 0;
+            
+            // Update source counts
+            const sources = data.stats.by_source || {};
+            document.getElementById('sourceJetson').textContent = sources.JETSON || 0;
+            document.getElementById('sourceController').textContent = sources.CONTROLLER || 0;
+            document.getElementById('sourceManual').textContent = sources.MANUAL || 0;
+            document.getElementById('sourceSequence').textContent = sources.SEQUENCE || 0;
+            
+            // Update uptime
+            document.getElementById('uptime').textContent = data.uptime || '-';
+            
+            // Update command history
+            const historyContainer = document.getElementById('commandHistory');
+            historyContainer.innerHTML = '';
+            
+            if (data.history && data.history.length > 0) {
+                data.history.reverse().forEach(entry => {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    item.innerHTML = `
+                        <span class="badge ${getSourceBadgeClass(entry.source)}">${entry.source}</span>
+                        <span class="command-text">${entry.command}</span>
+                        <span class="timestamp">${formatTimestamp(entry.timestamp)}</span>
+                    `;
+                    historyContainer.appendChild(item);
+                });
+            } else {
+                historyContainer.innerHTML = '<div class="history-item">No commands yet</div>';
+            }
+            
+            // Update last update time
+            document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            
+            // Check for new commands
+            const currentCount = data.stats.total_commands || 0;
+            if (currentCount > lastCommandCount) {
+                lastCommandCount = currentCount;
+            }
+        }
         
         // Change operation mode
         function changeMode(mode) {
@@ -972,79 +1054,35 @@
             return mapping[source] || 'badge-manual';
         }
         
-        function updateDashboard() {
-            fetch('/api/stats')
+        // Fetch current mode (keep polling for mode changes)
+        function fetchCurrentMode() {
+            fetch('/api/mode')
                 .then(response => response.json())
                 .then(data => {
-                    // Hide error message on successful connection
-                    document.getElementById('errorMessage').style.display = 'none';
-                    
-                    // Update connection status
-                    const statusIndicator = document.getElementById('statusIndicator');
-                    statusIndicator.className = 'status-indicator ' + 
-                        (data.rpi_connected ? 'status-connected' : 'status-disconnected');
-                    
-                    // Update stats
-                    document.getElementById('totalCommands').textContent = 
-                        data.stats.total_commands || 0;
-                    
-                    // Update source counts
-                    const sources = data.stats.by_source || {};
-                    document.getElementById('sourceJetson').textContent = sources.JETSON || 0;
-                    document.getElementById('sourceController').textContent = sources.CONTROLLER || 0;
-                    document.getElementById('sourceManual').textContent = sources.MANUAL || 0;
-                    document.getElementById('sourceSequence').textContent = sources.SEQUENCE || 0;
-                    
-                    // Update uptime
-                    document.getElementById('uptime').textContent = data.uptime || '-';
-                    
-                    // Update last update time
-                    document.getElementById('lastUpdate').textContent = 
-                        new Date().toLocaleTimeString();
-                    
-                    // Update command history
-                    const historyList = document.getElementById('historyList');
-                    const history = data.history || [];
-                    
-                    if (history.length === 0) {
-                        historyList.innerHTML = `
-                            <p style="text-align: center; color: #999; padding: 20px;">
-                                No commands yet...
-                            </p>
-                        `;
-                    } else {
-                        historyList.innerHTML = history.map(item => `
-                            <div class="history-item">
-                                <span class="command-text">${item.command}</span>
-                                <span class="command-source ${getSourceBadgeClass(item.source)}">
-                                    ${item.source}
-                                </span>
-                                <span class="timestamp">${formatTimestamp(item.timestamp)}</span>
-                            </div>
-                        `).join('');
+                    if (data.mode) {
+                        updateModeUI(data.mode);
                     }
-                    
-                    // Check for new commands (optional: add notification sound)
-                    const currentCount = data.stats.total_commands || 0;
-                    if (currentCount > lastCommandCount && lastCommandCount > 0) {
-                        // New command received - could add visual/audio notification here
-                        console.log('New command received!');
-                    }
-                    lastCommandCount = currentCount;
                 })
                 .catch(error => {
-                    console.error('Error fetching dashboard data:', error);
-                    document.getElementById('errorMessage').style.display = 'block';
+                    console.error('Error fetching mode:', error);
                 });
         }
         
-        // Initial updates
-        fetchCurrentMode();  // Fetch current mode on load
-        updateDashboard();
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            initSSE();  // Start SSE connection for real-time updates
+            fetchCurrentMode();  // Fetch initial mode
+            
+            // Poll mode every 5 seconds (mode changes are less frequent)
+            setInterval(fetchCurrentMode, 5000);
+        });
         
-        // Set up periodic updates
-        setInterval(updateDashboard, UPDATE_INTERVAL);
-        setInterval(fetchCurrentMode, 5000);  // Update mode every 5 seconds
+        // Clean up SSE connection on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
     </script>
 </body>
 </html>

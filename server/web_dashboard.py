@@ -4,9 +4,11 @@ Provides real-time statistics and command history visualization
 """
 import os
 import sys
-from flask import Flask, render_template, jsonify, request
-from threading import Thread
+from flask import Flask, render_template, jsonify, request, Response
+from threading import Thread, Event
 import time
+import json
+from queue import Queue, Empty
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -25,6 +27,10 @@ zmq_socket = None  # Will be set when dashboard is started
 current_mode = "idle"  # idle, sequence, controller, server
 mode_active = False
 sequence_input_queue = []  # Queue for sequence commands from web
+
+# SSE event queue for broadcasting updates to clients
+event_queue = Queue()
+update_event = Event()  # Signal when new data is available
 
 
 def update_heartbeat_status():
@@ -70,6 +76,65 @@ def get_stats():
     })
 
 
+@app.route('/api/stream')
+def stream():
+    """
+    Server-Sent Events (SSE) endpoint for real-time updates.
+    Pushes data only when new commands are processed.
+    """
+    def event_stream():
+        # Send initial data
+        aggregator = get_aggregator()
+        stats = aggregator.get_stats()
+        history = aggregator.get_recent_history(count=20)
+        uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
+        uptime_str = format_uptime(uptime_seconds)
+        
+        yield f"data: {json.dumps({
+            'stats': stats,
+            'history': history,
+            'uptime': uptime_str,
+            'rpi_connected': rpi_connected,
+            'last_heartbeat': last_heartbeat_time,
+            'timestamp': time.time()
+        })}\n\n"
+        
+        # Track last command count to detect changes
+        last_total = stats.get('total_commands', 0)
+        
+        # Send updates when data changes
+        while True:
+            # Wait for update signal or timeout after 10 seconds
+            update_event.wait(timeout=10)
+            update_event.clear()
+            
+            # Get fresh data
+            stats = aggregator.get_stats()
+            current_total = stats.get('total_commands', 0)
+            
+            # Only send if there's a change or heartbeat update
+            if current_total != last_total:
+                history = aggregator.get_recent_history(count=20)
+                uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
+                uptime_str = format_uptime(uptime_seconds)
+                
+                yield f"data: {json.dumps({
+                    'stats': stats,
+                    'history': history,
+                    'uptime': uptime_str,
+                    'rpi_connected': rpi_connected,
+                    'last_heartbeat': last_heartbeat_time,
+                    'timestamp': time.time()
+                })}\n\n"
+                
+                last_total = current_total
+            else:
+                # Send heartbeat ping to keep connection alive
+                yield f": ping\n\n"
+    
+    return Response(event_stream(), mimetype='text/event-stream')
+
+
 @app.route('/api/health')
 def health_check():
     """Simple health check endpoint"""
@@ -105,6 +170,8 @@ def control():
             if zmq_socket:
                 from zmq_client import send_command
                 send_command(zmq_socket, processed_cmd)
+                # Trigger SSE update
+                update_event.set()
                 return jsonify({
                     'status': 'success',
                     'command': processed_cmd,
@@ -212,6 +279,8 @@ def sequence_command():
             if success and processed_cmd:
                 from zmq_client import send_command
                 send_command(zmq_socket, processed_cmd)
+                # Trigger SSE update
+                update_event.set()
                 return jsonify({
                     'status': 'success',
                     'command': processed_cmd,
