@@ -47,9 +47,5 @@ nohup.out
 .env
 .env.*
 
-# Docker
-Dockerfile
-.dockerignore
-
 # Scripts (already in image)
 setup_static_ip.sh

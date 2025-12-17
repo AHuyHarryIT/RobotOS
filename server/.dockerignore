@@ -47,7 +47,5 @@ nohup.out
 .env
 .env.*
 
-# Docker
-Dockerfile
-docker-compose.yml
-.dockerignore
+# Build context optimization
+data/

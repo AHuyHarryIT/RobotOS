@@ -1,9 +1,22 @@
+version: '3.8'
+
 services:
-  xbox-client:
+  robotos-server:
     build: .
-    container_name: auto-bot-xbox-client
-    env_file: .env         # sẽ tạo tự động bằng script nếu chưa có
-    network_mode: host     # để container truy cập được vào 192.168.10.x
-    # devices:
-    #   - "/dev/input:/dev/input"   # map joystick
+    container_name: robotos-server
+    env_file: .env
+    network_mode: host
     restart: unless-stopped
+    volumes:
+      - ./data:/app/data  # Persist logs/data
+    # Uncomment if using Xbox controller directly from container
+    # devices:
+    #   - "/dev/input:/dev/input"
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
