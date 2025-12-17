@@ -90,14 +90,15 @@ def stream():
         uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
         uptime_str = format_uptime(uptime_seconds)
         
-        yield f"data: {json.dumps({
+        data_dict = {
             'stats': stats,
             'history': history,
             'uptime': uptime_str,
             'rpi_connected': rpi_connected,
             'last_heartbeat': last_heartbeat_time,
             'timestamp': time.time()
-        })}\n\n"
+        }
+        yield f"data: {json.dumps(data_dict)}\n\n"
         
         # Track last command count to detect changes
         last_total = stats.get('total_commands', 0)
@@ -118,19 +119,20 @@ def stream():
                 uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
                 uptime_str = format_uptime(uptime_seconds)
                 
-                yield f"data: {json.dumps({
+                data_dict = {
                     'stats': stats,
                     'history': history,
                     'uptime': uptime_str,
                     'rpi_connected': rpi_connected,
                     'last_heartbeat': last_heartbeat_time,
                     'timestamp': time.time()
-                })}\n\n"
+                }
+                yield f"data: {json.dumps(data_dict)}\n\n"
                 
                 last_total = current_total
             else:
                 # Send heartbeat ping to keep connection alive
-                yield f": ping\n\n"
+                yield ": ping\n\n"
     
     return Response(event_stream(), mimetype='text/event-stream')
 
