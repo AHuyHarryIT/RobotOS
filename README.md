@@ -115,6 +115,22 @@ client = VisionClient()
 client.send_command("left 0.3")
 ```
 
+### 4. Web Dashboard 🌐
+Real-time monitoring interface accessible via web browser:
+```bash
+# Access dashboard
+http://localhost:5000           # On local machine
+http://<miniPC-IP>:5000         # From other devices
+```
+
+**Dashboard Features:**
+- 📊 Real-time command statistics
+- 🎯 Commands by source (Jetson, Controller, Manual, Sequence)
+- 📜 Live command history
+- 💓 RPi connection status
+- ⏱️ System uptime tracking
+- 🔄 Auto-refresh every 1 second
+
 ## 📡 Network Ports
 
 | Port | Direction | Purpose |
@@ -122,6 +138,7 @@ client.send_command("left 0.3")
 | 5555 | Client → RPi | Command execution |
 | 5556 | RPi → Client | Heartbeat monitoring |
 | 5557 | Jetson → Client | Vision commands |
+| 5000 | Browser → Client | Web Dashboard (HTTP) |
 
 ## 🔧 Commands
 

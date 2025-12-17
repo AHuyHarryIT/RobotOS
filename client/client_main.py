@@ -22,6 +22,7 @@ from seq_mode import seq_console_loop
 from controller_mode import controller_loop
 from command_server import start_command_server, stop_command_server
 from command_aggregator import get_aggregator
+from web_dashboard import run_dashboard_background
 
 
 def main():
@@ -47,9 +48,10 @@ def main():
         print("1. Sequence mode (text commands / sequences with STOP interrupt)")
         print("2. Controller mode (Xbox controller)")
         print("3. Server mode only (receive from Jetson, no manual control)")
+        print("4. Web Dashboard (monitor commands via web interface)")
         print("s. Show statistics")
         print("q. Exit")
-        choice = input("Select mode (1/2/3/s/q): ").strip().lower()
+        choice = input("Select mode (1/2/3/4/s/q): ").strip().lower()
 
         if choice == "1":
             seq_console_loop(sock)
@@ -63,6 +65,21 @@ def main():
                 while True:
                     cmd = input("(Press 'q' to return to menu): ").strip().lower()
                     if cmd in ("q", "quit", "back", "menu"):
+                        break
+            except KeyboardInterrupt:
+                print("\nReturning to menu...")
+        elif choice == "4":
+            # Start web dashboard
+            print("\n[WEB DASHBOARD] Starting web interface...")
+            dashboard_thread = run_dashboard_background(host='0.0.0.0', port=5000)
+            print("Dashboard is running at: http://localhost:5000")
+            print("Access from other devices: http://<your-ip>:5000")
+            print("\nPress Ctrl+C or 'q' to stop dashboard and return to menu")
+            try:
+                while True:
+                    cmd = input("(Press 'q' to return to menu): ").strip().lower()
+                    if cmd in ("q", "quit", "back", "menu"):
+                        print("Dashboard will continue running in background...")
                         break
             except KeyboardInterrupt:
                 print("\nReturning to menu...")
