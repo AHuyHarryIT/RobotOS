@@ -165,6 +165,7 @@ def main():
     FPS = Config.FPS
     OUT_SCALE = Config.OUT_SCALE
     SHOW_DEBUG_WINDOWS = Config.SHOW_DEBUG_WINDOWS
+    SAVE_DEBUG_IMAGES=Config.SAVE_DEBUG_IMAGES
     USE_BLUR = Config.USE_BLUR
     BLUR_KSIZE = Config.BLUR_KSIZE
     BLUR_SIGMA = Config.BLUR_SIGMA
@@ -175,7 +176,7 @@ def main():
     COMMAND_COOLDOWN = Config.COMMAND_COOLDOWN
     MOVEMENT_DURATION = Config.MOVEMENT_DURATION
     MOVEMENT_DURATION_TURN = Config.MOVEMENT_DURATION_TURN
-    
+    ILLUM_NORMALIZATION=Config.ILLUM_NORMALIZATION
     DEBUG_STATIC=Config.DEBUG_STATIC
     THR_MODE=Config.THR_MODE
     THR_L=Config.THR_L
@@ -195,7 +196,8 @@ def main():
                     ASPECT_MAX=ASPECT_MAX,
                     LINE_AR_REJECT=LINE_AR_REJECT,
                     LINE_FILL_MAX=LINE_FILL_MAX,
-                    AREA_PCT=AREA_PCT)
+                    AREA_PCT=AREA_PCT,
+                    ILLUM_NORM=ILLUM_NORMALIZATION)
 
     # -------- ENV RELOAD SETUP --------
     ENV_RELOAD_INTERVAL = 2.0  # seconds
@@ -204,8 +206,8 @@ def main():
     # Initialize ROI
     roi_helper = ROI(
         saved_path=ROI_PT_PATH,
-        ROTATE_CW_DEG=0,
-        FLIPCODE=1,
+        ROTATE_CW_DEG=180,
+        FLIPCODE=-1,
         ANGLE_TRIANGLE=math.radians(60),
         W=W, H=H
     )
@@ -245,10 +247,13 @@ def main():
     os.makedirs("output/logs", exist_ok=True)
 
     out_path = os.path.join("output", "result_combined.avi")
+    out_path_video_ori = os.path.join("output", "original.avi")
     fourcc = cv.VideoWriter_fourcc(*"XVID")
     out_w = int(W * OUT_SCALE * 3)
     out_h = int(H * OUT_SCALE)
     writer = cv.VideoWriter(out_path, fourcc, FPS, (out_w, out_h))
+    writer2 = cv.VideoWriter(out_path_video_ori, fourcc, FPS, (W,H))
+
     print(f"[INFO] Writing combined video to: {out_path}")
 
     log_file = os.path.join("output/logs", "detection_log.txt")
@@ -286,12 +291,12 @@ def main():
             daemon=True
         )
         listener_thread.start()
+    turning=False
 
     print("\n" + "="*50)
     print("  JETSON CALIBRATION STARTED")
     print("="*50)
     print("Press 'q' in console or Ctrl+C to stop\n")
-
     try:
         while True:
             # -------- PERIODIC ENV RELOAD --------
@@ -353,6 +358,7 @@ def main():
             frame = rotate(frame, roi_helper.ROTATE_CW_DEG)
             frame = cv.flip(frame, roi_helper.FLIPCODE)
             frame = cv.resize(frame, (roi_helper.W, roi_helper.H))
+            frame_original=frame.copy()
             frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
             if USE_BLUR:
                 frame = cv.medianBlur(frame, BLUR_KSIZE)
@@ -394,14 +400,20 @@ def main():
                     angle_deg = np.rad2deg(angle_est)
                     
                     if angle_est < np.pi/2 - np.deg2rad(ACCEPTANCE):
-                        cond = 'RIGHT'
-                        command_to_send = f"right {MOVEMENT_DURATION_TURN}"
-                    elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
                         cond = 'LEFT'
                         command_to_send = f"left {MOVEMENT_DURATION_TURN}"
+                        turning=True
+                    elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
+                        cond = 'RIGHT'
+                        command_to_send = f"right {MOVEMENT_DURATION_TURN}"
+                        turning=True
                     else:
-                        cond = 'FORWARD'
-                        command_to_send = f"forward {MOVEMENT_DURATION}"
+                        if turning:
+                            command_to_send = "stop"
+                            turning=False
+                        else:
+                            cond = 'FORWARD'
+                            command_to_send = f"forward {MOVEMENT_DURATION}"
                     
                     print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')
                     
@@ -437,6 +449,9 @@ def main():
                 if cv.waitKey(1) & 0xFF == ord('q'):
                     break
 
+            if SAVE_DEBUG_IMAGES:
+                writer2.write(frame_original)
+
             # Log debug info
             log_msg = (
                 f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
@@ -458,8 +473,12 @@ def main():
         
         cap.release()
         writer.release()
+        print()
+        if SAVE_DEBUG_IMAGES:
+            print(f"[INFO] Finished. Original vid saved at: {out_path_video_ori}")
+            writer2.release()
         cv.destroyAllWindows()
-        print(f"\n[INFO] Finished. Logs saved at: {log_file}")
+        print(f"[INFO] Finished. Logs saved at: {log_file}")
         print(f"[INFO] Video saved at: {out_path}")
 
 

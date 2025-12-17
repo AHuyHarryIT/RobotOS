@@ -11,11 +11,11 @@ class StaticParams:
                  ILLUM_NORM="none",      # "none" | "flatfield" | "clahe"
                  NORM_BLUR_K=3,         # large odd kernel for flatfield
                  NORM_EPS=1e-6,
-                 CLAHE_CLIP=2.0,
+                 CLAHE_CLIP=1.0,
                  CLAHE_TILE=8,
                  MIN_AREA=500, MIN_THICK=6, ASPECT_MAX=1.4,
                  LINE_AR_REJECT=3.0, LINE_FILL_MAX=0.22,
-                 AREA_PCT=2.5) -> None:
+                 AREA_PCT=2.5, LRANGE=1.0, HRANGE=30.0, GAMMA=0.2) -> None:
         self.DEBUG = DEBUG_STATIC
 
         # Threshold config
@@ -38,10 +38,15 @@ class StaticParams:
         self.CLAHE_CLIP = CLAHE_CLIP
         self.CLAHE_TILE = CLAHE_TILE
 
+        self.LRANGE = LRANGE
+        self.HRANGE = HRANGE
+
+        self.GAMMA = GAMMA
+
     def normalize_L(self, L, roi_mask):
         """Return illumination-normalized L (uint8 0..255)."""
         L_roi = cv.bitwise_and(L, L, mask=roi_mask)
-
+        # print('[LOG] Normalization method:', self.ILLUM_NORM)
         if self.ILLUM_NORM == "none":
             return L_roi
 
@@ -88,8 +93,8 @@ class StaticParams:
             return int(np.clip(self.THR_L, 0, 255))
 
         # Robust range: percentiles instead of min/max (handles glare/noise)
-        lo = np.percentile(vals, 1)
-        hi = np.percentile(vals, 30)
+        lo = np.percentile(vals, self.LRANGE)
+        hi = np.percentile(vals, self.HRANGE)
         # print(lo,hi)
         if hi <= lo:
             return int(np.clip(self.THR_L, 0, 255))
@@ -132,7 +137,18 @@ def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = 
     Static obstacle check with FIXED L* threshold and shape filters.
     Returns: (stop: bool, bbox: (x,y,w,h) or None, debug dict)
     """
-    blur=cv.GaussianBlur(frame_ori, (params.NORM_BLUR_K, params.NORM_BLUR_K), 0.25)
+
+
+    inv_gamma = 1.0 / params.GAMMA
+    table = np.array([((i / 255.0) ** inv_gamma) * 255
+                        for i in np.arange(256)]).astype("uint8")
+    
+    # Apply the LUT mapping
+    frame_gamma = cv.LUT(frame_ori, table)
+
+    frame_normalized = params.normalize_L(frame_gamma.copy(), roi_mask)
+
+    blur=cv.GaussianBlur(frame_normalized, (params.NORM_BLUR_K, params.NORM_BLUR_K), 0.25)
     thr = params.compute_thr(blur)
     _, floor = cv.threshold(frame_ori, thr, 255, cv.THRESH_BINARY)
 

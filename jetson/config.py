@@ -42,6 +42,9 @@ class Config:
     ADAPTIVE_BLOCK_SIZE = get_int("ADAPTIVE_BLOCK_SIZE", 21)
     ADAPTIVE_C = get_int("ADAPTIVE_C", 5)
 
+    LRANGE=get_float('LRANGE',1.0)
+    HRANGE=get_float('HRANGE',30.0)
+
     # Post-processing
     MORPH_KERNEL = get_int("MORPH_KERNEL", 3)
     MIN_OBJECT_AREA = get_int("MIN_OBJECT_AREA", 500)
@@ -53,7 +56,8 @@ class Config:
     COMMAND_COOLDOWN=get_float('COMMAND_COOLDOWN',0.3)
     MOVEMENT_DURATION=get_float('MOVEMENT_DURATION',0.05)
     MOVEMENT_DURATION_TURN=get_float('MOVEMENT_DURATION_TURN',0.03)
-
+    SAVE_DEBUG_IMAGES=get_bool('SAVE_DEBUG_IMAGES', False)
+    ILLUM_NORMALIZATION=get_text('NORMALIZATION_METHOD','clahe')
     # Static stop
     DEBUG_STATIC=get_bool('DEBUG_STATIC', False)
     THR_MODE=get_text('THR_MODE')
@@ -82,6 +86,8 @@ def reload_all_env(dotenv_path):
         "USE_BLUR": _bool("USE_BLUR", True),
         "BLUR_KSIZE": _int("BLUR_KSIZE", 3),
         "BLUR_SIGMA": _int("BLUR_SIGMA", 5),
+        'LRANGE': _float('LRANGE',1.0),
+        'HRANGE': _float('HRANGE',30.0),
         "SAFE_FLUSH": _int("SAFE_FLUSH", 0),
         "ACCEPTANCE": _int("ACCEPTANCE", 5),
         "STOP_HOLD_FRAMES": _int("STOP_HOLD_FRAMES", 20),
