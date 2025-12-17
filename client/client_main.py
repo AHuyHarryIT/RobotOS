@@ -41,81 +41,47 @@ def main():
     print("[INIT] Command server is running in background")
     print("[INIT] All commands will be processed through central aggregator\n")
 
-    while True:
-        print("\n========================")
-        print("  AUTO-BOT CLIENT MENU ")
-        print("========================")
-        print("1. Sequence mode (text commands / sequences with STOP interrupt)")
-        print("2. Controller mode (Xbox controller)")
-        print("3. Server mode only (receive from Jetson, no manual control)")
-        print("4. Web Dashboard (monitor commands via web interface)")
-        print("s. Show statistics")
-        print("q. Exit")
-        choice = input("Select mode (1/2/3/4/s/q): ").strip().lower()
-
-        if choice == "1":
-            seq_console_loop(sock)
-        elif choice == "2":
-            controller_loop(sock)
-        elif choice == "3":
-            print("\n[SERVER MODE] Client is running command server")
-            print("Receiving commands from Jetson and forwarding to RPi")
-            print("Press Ctrl+C or 'q' to return to menu")
-            try:
-                while True:
-                    cmd = input("(Press 'q' to return to menu): ").strip().lower()
-                    if cmd in ("q", "quit", "back", "menu"):
-                        break
-            except KeyboardInterrupt:
-                print("\nReturning to menu...")
-        elif choice == "4":
-            # Start web dashboard
-            print("\n[WEB DASHBOARD] Starting web interface...")
-            dashboard_thread = run_dashboard_background(host='0.0.0.0', port=5000, sock=sock)
-            print("Dashboard is running at: http://localhost:5000")
-            print("Access from other devices: http://<your-ip>:5000")
-            print("\nPress Ctrl+C or 'q' to stop dashboard and return to menu")
-            try:
-                while True:
-                    cmd = input("(Press 'q' to return to menu): ").strip().lower()
-                    if cmd in ("q", "quit", "back", "menu"):
-                        print("Dashboard will continue running in background...")
-                        break
-            except KeyboardInterrupt:
-                print("\nReturning to menu...")
-        elif choice == "s":
-            # Show aggregator statistics
-            stats = aggregator.get_stats()
-            print("\n=== Command Aggregator Statistics ===")
-            print(f"Total commands processed: {stats['total_commands']}")
-            print(f"Errors: {stats['errors']}")
-            print(f"Commands by source:")
-            for source, count in stats['by_source'].items():
-                print(f"  - {source}: {count}")
-            print(f"Last command: {stats['last_command']}")
-            if stats['last_command_age'] is not None:
-                print(f"Last command age: {stats['last_command_age']:.2f}s")
-            print(f"History size: {stats['history_size']}")
-            
-            # Show recent history
-            print("\n=== Recent Commands (last 5) ===")
-            for entry in aggregator.get_recent_history(5):
-                ts = entry['timestamp']
-                src = entry['source']
-                cmd = entry['processed']
-                print(f"[{ts:.2f}] {src:10} -> {cmd}")
-            
-            input("\nPress Enter to continue...")
-        elif choice in ("q", "quit", "exit"):
-            print("Exiting client, sending final STOP command...")
-            try:
-                send_command(sock, "stop")
-            except Exception:
-                pass
-            stop_command_server()
-            break
-        else:
-            print("Invalid choice, please enter 1, 2, 3, s, or q.")
+    # Auto-start web dashboard
+    print("="*60)
+    print("🌐 AUTO-BOT WEB DASHBOARD")
+    print("="*60)
+    print("Starting web interface automatically...")
+    print("")
+    
+    dashboard_thread = run_dashboard_background(host='0.0.0.0', port=5000, sock=sock)
+    
+    print("")
+    print("="*60)
+    print("✅ WEB DASHBOARD IS RUNNING")
+    print("="*60)
+    print("📊 Dashboard URL (local):  http://localhost:5000")
+    print("📊 Dashboard URL (network): http://<your-ip>:5000")
+    print("")
+    print("🎯 You can now:")
+    print("   - Select operation mode from web")
+    print("   - Control robot with buttons")
+    print("   - Send sequence commands")
+    print("   - Monitor real-time statistics")
+    print("")
+    print("="*60)
+    print("Press Ctrl+C to stop the server")
+    print("="*60)
+    print("")
+    
+    try:
+        # Keep the main thread alive
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n\n[SHUTDOWN] Stopping Auto-Bot client...")
+        print("[SHUTDOWN] Sending final STOP command...")
+        try:
+            send_command(sock, "stop")
+        except Exception:
+            pass
+        stop_command_server()
+        print("[SHUTDOWN] Goodbye! 👋")
 
 
 if __name__ == "__main__":
