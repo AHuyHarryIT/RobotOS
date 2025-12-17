@@ -47,7 +47,19 @@ def command_server_loop(zmq_to_rpi_sock):
             try:
                 # Set timeout to check server_running flag periodically
                 if server_sock.poll(timeout=500):  # 500ms timeout
-                    raw = servcommand through central aggregator
+                    raw = server_sock.recv_string()
+                    print(f"[CMD SERVER] <- Received: {raw}")
+                    
+                    # Parse incoming message
+                    import json
+                    try:
+                        msg_obj = json.loads(raw)
+                        payload = msg_obj.get("cmd", raw)
+                    except:
+                        # If not JSON, treat as plain command string
+                        payload = raw.strip()
+                    
+                    # Process command through central aggregator
                     # Jetson commands typically have high priority for autonomous control
                     success, processed_cmd, msg = aggregator.process_command(
                         command=payload,
@@ -79,14 +91,9 @@ def command_server_loop(zmq_to_rpi_sock):
                             "status": "error",
                             "error": msg,
                             "forwarded": False
-                        
-                        reply = {"status": "ok", "cmd": processed_cmd, "forwarded": True}
-                    except Exception as e:
-                        print(f"[CMD SERVER] Error forwarding to RPi: {e}")
-                        reply = {"status": "error", "error": str(e), "forwarded": False}
+                        }
                     
                     # Reply to external source (Jetson)
-                    import json
                     server_sock.send_string(json.dumps(reply))
                     print(f"[CMD SERVER] -> Replied: {reply}")
                     
