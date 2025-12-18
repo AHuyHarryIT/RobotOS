@@ -100,31 +100,41 @@ def update_hold_state(hold_active, hold_remaining, detected, hold_frames):
 
 
 class CommandThrottler:
-    """Throttle command sending to avoid spamming."""
+    """
+    Throttle command sending to avoid spamming and respect movement duration.
+    Prevents sending new move commands while the car is still physically moving.
+    """
     
-    def __init__(self, cooldown=0.3):
+    def __init__(self, cooldown=0.1):
         self.cooldown = cooldown
         self.last_cmd = None
-        self.last_time = 0
+        self.busy_until = 0  # Timestamp when the current move finishes
         
-    def should_send(self, cmd):
+    def should_send(self, cmd, duration=0.0):
         """Check if we should send this command."""
         now = time.time()
         
-        # Always send STOP immediately
+        # --- PRIORITY: STOP ---
+        # Always send STOP immediately and clear busy status so we can resume quickly
         if cmd == "stop":
             self.last_cmd = cmd
-            self.last_time = now
+            self.busy_until = 0
             return True
         
-        # If same command and within cooldown, skip
-        if cmd == self.last_cmd and (now - self.last_time) < self.cooldown:
+        # --- RULE: BUSY CHECK ---
+        # If the car is still executing the previous command, do not send.
+        if now < self.busy_until:
+            return False
+        
+        # --- RULE: NETWORK HYGIENE ---
+        # Even if not busy, don't spam the exact same command instantly
+        # (Useful if duration is 0 or very short)
+        if cmd == self.last_cmd and (now < self.busy_until + self.cooldown):
             return False
         
         self.last_cmd = cmd
-        self.last_time = now
+        self.busy_until = now + duration
         return True
-
 
 def main():
     parser = argparse.ArgumentParser(description="Jetson Calibration with Vision Client")
@@ -383,11 +393,14 @@ def main():
             command_to_send = None
 
             # === DECISION LOGIC ===
+            current_duration = 0.0  # Initialize duration
+
             if hold_active:
                 # STOP detected and holding
                 cond = 'STOP'
                 command_to_send = "stop"
-                
+                current_duration = 0.0  # Stop is immediate
+
                 print(f'[FRAME {frame_id}] STOP DETECTED! (hold: {hold_remaining})')
                 cv.putText(vis, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
                 cv.putText(vis, f"hold:{hold_remaining}", (10, 48), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
@@ -402,18 +415,24 @@ def main():
                     if angle_est < np.pi/2 - np.deg2rad(ACCEPTANCE):
                         cond = 'LEFT'
                         command_to_send = f"left {MOVEMENT_DURATION_TURN}"
+                        current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
                         turning=True
+
                     elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
                         cond = 'RIGHT'
                         command_to_send = f"right {MOVEMENT_DURATION_TURN}"
+                        current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
                         turning=True
+
                     else:
                         if turning:
                             command_to_send = "stop"
+                            current_duration = 0.0
                             turning=False
                         else:
                             cond = 'FORWARD'
                             command_to_send = f"forward {MOVEMENT_DURATION}"
+                            current_duration = MOVEMENT_DURATION  # Set forward duration
                     
                     print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')
                     
@@ -427,7 +446,7 @@ def main():
 
             # === SEND COMMAND TO CLIENT ===
             if vision_client and command_to_send:
-                if throttler.should_send(command_to_send):
+                if throttler.should_send(command_to_send, duration=current_duration):
                     result = vision_client.send_command(command_to_send)
                     if result.get("status") != "ok":
                         print(f"[ERROR] Command failed: {result}")
