@@ -249,7 +249,7 @@ def main():
     frame0 = cv.resize(frame0, (roi_helper.W, roi_helper.H))
 
     # Initialize calibration and masks
-    calib = Calibrate()
+    calib = Calibrate(MAX_LINES_TO_PROCESS=30)
     DANGER_YFRAC = 0.85
     EDGE_PAD = 4
     roi_mask, danger_mask = roi_helper.build_masks(
@@ -445,7 +445,7 @@ def main():
                             turning=False
                         else:
                             cond = 'FORWARD'
-                            command_to_send = f"forward {MOVEMENT_DURATION}"
+                            # command_to_send = f"forward {MOVEMENT_DURATION}"
                             current_duration = MOVEMENT_DURATION  # Set forward duration
                     
                     print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')

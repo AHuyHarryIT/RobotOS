@@ -58,4 +58,4 @@ def draw_arrow_by_angle(image, start_point, angle_degrees, length, color, thickn
     y2 = int(y1 - length * math.sin(angle_radians))
     end_point = (x2, y2)
     
-    cv2.arrowedLine(image, start_point, end_point, color, thickness, tipLength=0.2)
+    return cv2.arrowedLine(image, start_point, end_point, color, thickness, tipLength=0.2)
