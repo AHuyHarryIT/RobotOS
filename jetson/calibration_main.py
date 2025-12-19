@@ -197,6 +197,9 @@ def main():
     LINE_AR_REJECT=Config.LINE_AR_REJECT
     LINE_FILL_MAX=Config.LINE_FILL_MAX
     AREA_PCT=Config.AREA_PCT
+    FLOOR_PROFILE_PATH=Config.FLOOR_PROFILE_PATH
+    ENABLE_STATIC_STOP = Config.ENABLE_STATIC_STOP
+    ENABLE_CALIBRATION = Config.ENABLE_CALIBRATION
     sp = StaticParams(DEBUG_STATIC=DEBUG_STATIC,
                     THR_MODE=THR_MODE,
                     THR_L=THR_L,
@@ -207,7 +210,8 @@ def main():
                     LINE_AR_REJECT=LINE_AR_REJECT,
                     LINE_FILL_MAX=LINE_FILL_MAX,
                     AREA_PCT=AREA_PCT,
-                    ILLUM_NORM=ILLUM_NORMALIZATION)
+                    ILLUM_NORM=ILLUM_NORMALIZATION,
+                    FLOOR_PROFILE_PATH=FLOOR_PROFILE_PATH)
 
     # -------- ENV RELOAD SETUP --------
     ENV_RELOAD_INTERVAL = 2.0  # seconds
@@ -301,12 +305,16 @@ def main():
             daemon=True
         )
         listener_thread.start()
+    
     turning=False
+    stop_detected=False
+    bbox=None
 
     print("\n" + "="*50)
     print("  JETSON CALIBRATION STARTED")
     print("="*50)
     print("Press 'q' in console or Ctrl+C to stop\n")
+    
     try:
         while True:
             # -------- PERIODIC ENV RELOAD --------
@@ -368,12 +376,17 @@ def main():
             frame = rotate(frame, roi_helper.ROTATE_CW_DEG)
             frame = cv.flip(frame, roi_helper.FLIPCODE)
             frame = cv.resize(frame, (roi_helper.W, roi_helper.H))
+            
             frame_original=frame.copy()
-            frame = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+            frame_color=frame.copy()
+            frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+            
             if USE_BLUR:
-                frame = cv.medianBlur(frame, BLUR_KSIZE)
+                frame_gray = cv.medianBlur(frame_gray, BLUR_KSIZE)
+
             start_t = time.time()
-            stop_detected, bbox, dbg = static_stop_detect(frame, roi_mask, danger_mask, sp)
+            if ENABLE_STATIC_STOP:
+                stop_detected, bbox, dbg = static_stop_detect(frame_color, roi_mask, danger_mask, sp)
             elapsed_ms = (time.time() - start_t) * 1000
 
             # Update hold logic
@@ -382,17 +395,18 @@ def main():
             )
 
             # Prepare visualization
-            vis = frame.copy()
+            vis = frame_color.copy()
             bbox_info = "None"
-            if bbox is not None:
+            if bbox:
                 x, y, bw, bh = bbox
                 cv.rectangle(vis, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
                 bbox_info = f"x={x},y={y},w={bw},h={bh}"
 
+            if not ENABLE_STATIC_STOP:
+                            cv.putText(vis, "OBJ DET: OFF", (10, H-20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
             angle_est, cond, angle_log = None, None, None
             command_to_send = None
-
-            # === DECISION LOGIC ===
             current_duration = 0.0  # Initialize duration
 
             if hold_active:
@@ -405,7 +419,7 @@ def main():
                 cv.putText(vis, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
                 cv.putText(vis, f"hold:{hold_remaining}", (10, 48), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-            else:
+            elif ENABLE_CALIBRATION:
                 # No stop detected - do angle estimation
                 angle_est, angle_log = calib.update(frame)
                 
@@ -441,8 +455,11 @@ def main():
                     # Draw angle arrow
                     H_vis = H - 10
                     if SHOW_DEBUG_WINDOWS:
-                        draw_arrow_by_angle(vis, (W//2, H_vis), angle_deg, 100, (255, 0, 255), 5)
-                    cv.putText(vis, f"{angle_deg:.1f}°", (W//2+20, H_vis-5), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+                        vis=draw_arrow_by_angle(vis, (W//2, H_vis), angle_deg, 100, (255, 0, 255), 5)
+                    cv.putText(vis, f"{angle_deg:.1f}", (W//2+20, H_vis-5), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+            else:
+                # Calibration Disabled
+                cv.putText(vis, "LANE CALIB: OFF", (W-150, H-20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
             # === SEND COMMAND TO CLIENT ===
             if vision_client and command_to_send:
@@ -452,11 +469,15 @@ def main():
                         print(f"[ERROR] Command failed: {result}")
 
             # === PREPARE OUTPUT VIDEO ===
-            nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
-            nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
-            vis_s = cv.cvtColor(vis, cv.COLOR_GRAY2BGR)
+            if DEBUG_STATIC and ENABLE_STATIC_STOP:
+                nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
+                nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
 
-            vis_s = cv.resize(vis_s, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
+            else:
+                nf_color = np.zeros_like(vis)
+                nd_color = np.zeros_like(vis)
+
+            vis_s = cv.resize(vis, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             nf_s = cv.resize(nf_color, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             nd_s = cv.resize(nd_color, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             combined = np.hstack((vis_s, nf_s, nd_s))
@@ -472,14 +493,26 @@ def main():
                 writer2.write(frame_original)
 
             # Log debug info
-            log_msg = (
-                f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
-                f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
-                f"fill={dbg['fill']:.2f} | thr={dbg['threshold']} | elapsed={elapsed_ms:.1f}ms | "
-                f"angle: {angle_est} | angle_deg: {np.rad2deg(angle_est) if angle_est else None} | "
-                f"Turn: {cond} | Command: {command_to_send}"
-            )
-            log_message(log_file, log_msg)
+            if ENABLE_STATIC_STOP:
+                log_msg = (
+                    f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
+                    f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
+                    f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms | "
+                    f"angle: {angle_est} | angle_deg: {np.rad2deg(angle_est) if angle_est else None} | "
+                    f"Turn: {cond} | Command: {command_to_send}"
+                )
+                log_message(log_file, log_msg)
+
+            else:
+                log_msg = (
+                    f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
+                    f"{bbox_info}"
+                    f"| elapsed={elapsed_ms:.1f}ms | "
+                    f"angle: {angle_est} | angle_deg: {np.rad2deg(angle_est) if angle_est else None} | "
+                    f"Turn: {cond} | Command: {command_to_send}"
+                )
+                log_message(log_file, log_msg)
+
 
     except KeyboardInterrupt:
         print("\n[INFO] Interrupted by user (Ctrl+C)")

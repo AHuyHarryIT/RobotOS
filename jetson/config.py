@@ -18,6 +18,9 @@ def get_text(key, default=''):
 
 
 class Config:
+    # Pipeline control
+    ENABLE_STATIC_STOP = get_bool("ENABLE_STATIC_STOP", True)
+    ENABLE_CALIBRATION = get_bool("ENABLE_CALIBRATION", True)
     # Camera
     CAM_DEVICE = get_int("CAM_DEVICE", 0)
     VIDEO_PATH = os.getenv("VIDEO_PATH", "")
@@ -69,6 +72,8 @@ class Config:
     LINE_AR_REJECT=get_float('LINE_AR_REJECT', 3.9)
     LINE_FILL_MAX=get_float('LINE_FILL_MAX',0.22)
     AREA_PCT=get_float('AREA_PCT',2.5)
+    FLOOR_PROFILE_PATH=os.getenv("FLOOR_PROFILE_PATH","./jetson/config/floor_profile.json")
+
 
 def reload_all_env(dotenv_path):
     """

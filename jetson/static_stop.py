@@ -1,6 +1,7 @@
 # static_stop.py
 import cv2 as cv
 import numpy as np
+from floor_profiler import FloorProfiler
 
 class StaticParams:
     def __init__(self,
@@ -15,15 +16,15 @@ class StaticParams:
                  CLAHE_TILE=8,
                  MIN_AREA=500, MIN_THICK=6, ASPECT_MAX=1.4,
                  LINE_AR_REJECT=3.0, LINE_FILL_MAX=0.22,
-                 AREA_PCT=2.5, LRANGE=1.0, HRANGE=30.0, GAMMA=0.2) -> None:
-        self.DEBUG = DEBUG_STATIC
+                 AREA_PCT=2.5, LRANGE=1.0, HRANGE=30.0, GAMMA=0.2, 
+                 FLOOR_PROFILE_PATH="./jetson/config/floor_profile.json",
+                 MIN_SIGMA_LAB=5.0, MIN_SIGMA_S=15.0,
+                 SIGMA_THRESH_COLOR=3.0, SIGMA_THRESH_LIGHT=6.0, GLARE_SIGMA_THRESH=3.0) -> None:
 
-        # Threshold config
+        self.DEBUG = DEBUG_STATIC
         self.THR_MODE = THR_MODE
         self.THR_L = THR_L
         self.THR_OFFSET = THR_OFFSET
-
-        # Other params
         self.MIN_AREA = MIN_AREA
         self.MIN_THICK = MIN_THICK
         self.ASPECT_MAX = ASPECT_MAX
@@ -31,76 +32,32 @@ class StaticParams:
         self.LINE_FILL_MAX = LINE_FILL_MAX
         self.AREA_PCT = AREA_PCT
         self.MORPH = (3, 3)
-
         self.ILLUM_NORM = ILLUM_NORM
         self.NORM_BLUR_K = NORM_BLUR_K
         self.NORM_EPS = NORM_EPS
         self.CLAHE_CLIP = CLAHE_CLIP
         self.CLAHE_TILE = CLAHE_TILE
-
         self.LRANGE = LRANGE
         self.HRANGE = HRANGE
-
         self.GAMMA = GAMMA
+        self.FLOOR_PROFILE_PATH = FLOOR_PROFILE_PATH
 
-    def normalize_L(self, L, roi_mask):
-        """Return illumination-normalized L (uint8 0..255)."""
-        L_roi = cv.bitwise_and(L, L, mask=roi_mask)
-        # print('[LOG] Normalization method:', self.ILLUM_NORM)
-        if self.ILLUM_NORM == "none":
-            return L_roi
-
-        if self.ILLUM_NORM == "clahe":
-            clahe = cv.createCLAHE(
-                clipLimit=float(self.CLAHE_CLIP),
-                tileGridSize=(int(self.CLAHE_TILE), int(self.CLAHE_TILE))
-            )
-            return clahe.apply(L_roi)
-
-        if self.ILLUM_NORM == "flatfield":
-            k = int(self.NORM_BLUR_K)
-            if k % 2 == 0:  # must be odd
-                k += 1
-            bg = cv.GaussianBlur(L_roi, (k, k), 0)
-            # division-based flatfield
-            Lf = L_roi.astype(np.float32) / (bg.astype(np.float32) + float(self.NORM_EPS))
-            Lf = cv.normalize(Lf, None, 0, 255, cv.NORM_MINMAX)
-            return Lf.astype(np.uint8)
-
-        # fallback
-        return L_roi
-    def compute_thr(self, L_img, roi_mask=None):
-        """
-        Return threshold for LAB L channel (0..255).
-
-        L_img: uint8 image (often L_norm or L_roi)
-        roi_mask: optional uint8 mask (0/255). If provided, stats are computed only inside ROI.
-        """
-
-        # Fixed threshold
-        if str(self.THR_MODE).lower() == "fixed":
-            return int(np.clip(self.THR_L, 0, 255))
-
-        # Build a 1D vector of pixels to measure (exclude masked-out zeros)
-        if roi_mask is not None:
-            vals = L_img[roi_mask > 0]
+        # --- OPTIMIZATION FIX ---
+        # Initialize the profiler ONCE here, not in the loop
+        self.profiler = FloorProfiler(
+            profile_path=FLOOR_PROFILE_PATH,
+            MIN_SIGMA_LAB=MIN_SIGMA_LAB,
+            MIN_SIGMA_S=MIN_SIGMA_S,
+            SIGMA_THRESH_COLOR=SIGMA_THRESH_COLOR,
+            SIGMA_THRESH_LIGHT=SIGMA_THRESH_LIGHT,
+            GLARE_SIGMA_THRESH=GLARE_SIGMA_THRESH
+        )
+        
+        self.profile_loaded = self.profiler.load_profile()
+        if not self.profile_loaded:
+            print(f"[StaticParams] WARN: Could not load floor profile from {FLOOR_PROFILE_PATH}")
         else:
-            # fallback: ignore zeros (common when L_img already has ROI applied)
-            vals = L_img[L_img > 0]
-
-        if vals.size < 10:
-            # not enough pixels -> fallback
-            return int(np.clip(self.THR_L, 0, 255))
-
-        # Robust range: percentiles instead of min/max (handles glare/noise)
-        lo = np.percentile(vals, self.LRANGE)
-        hi = np.percentile(vals, self.HRANGE)
-        # print(lo,hi)
-        if hi <= lo:
-            return int(np.clip(self.THR_L, 0, 255))
-
-        thr = int((lo + hi) / 2.0) - int(self.THR_OFFSET)
-        return int(np.clip(thr, 0, 255))
+            print(f"[StaticParams] Floor profile loaded successfully.")
 
 # ---------- DEBUG HELPERS----------
 def _shape_metrics(w, h, area):
@@ -134,33 +91,27 @@ def _passes_shape_filters(w, h, area, p: StaticParams):
 
 def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = StaticParams()):
     """
-    Static obstacle check with FIXED L* threshold and shape filters.
-    Returns: (stop: bool, bbox: (x,y,w,h) or None, debug dict)
+    Static obstacle check using FloorProfiler (Color/Sat check).
+    IMPORTANT: frame_ori must be BGR (Color), not Grayscale!
     """
-
-
-    inv_gamma = 1.0 / params.GAMMA
-    table = np.array([((i / 255.0) ** inv_gamma) * 255
-                        for i in np.arange(256)]).astype("uint8")
+    profiler = FloorProfiler(profile_path=params.FLOOR_PROFILE_PATH)
     
-    # Apply the LUT mapping
-    frame_gamma = cv.LUT(frame_ori, table)
+    # --- ERROR HANDLING FIX ---
+    if not params.profile_loaded:
+        # Return SAFE empty masks so main loop doesn't crash
+        h, w = frame_ori.shape[:2]
+        empty = np.zeros((h, w), dtype=np.uint8)
+        return False, None, {
+            "nonfloor": empty,
+            "nf_danger": empty,
+            "area_pct": 0, "elong": 0, "fill": 0
+        }
 
-    frame_normalized = params.normalize_L(frame_gamma.copy(), roi_mask)
-
-    blur=cv.GaussianBlur(frame_normalized, (params.NORM_BLUR_K, params.NORM_BLUR_K), 0.25)
-    thr = params.compute_thr(blur)
-    _, floor = cv.threshold(frame_ori, thr, 255, cv.THRESH_BINARY)
-
-    nonfloor = cv.bitwise_not(floor)
-
-    # Cleanup
-    kernel = cv.getStructuringElement(cv.MORPH_RECT, params.MORPH)
-    nonfloor = cv.morphologyEx(nonfloor, cv.MORPH_OPEN, kernel, iterations=1)
-    nonfloor = cv.morphologyEx(nonfloor, cv.MORPH_CLOSE, kernel, iterations=1)
+    # Get the defect mask (Calculates Z-scores for Color/Sat/Lightness)
+    nonfloor_mask = profiler.get_defect_mask(frame_ori, roi_mask)
 
     # Only danger band within ROI
-    nf_danger = cv.bitwise_and(nonfloor, danger_mask)
+    nf_danger = cv.bitwise_and(nonfloor_mask, danger_mask)
 
     # Connected components + shape filtering
     roi_pix = max(1, int(np.count_nonzero(roi_mask)))
@@ -170,11 +121,10 @@ def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = 
     if int(np.count_nonzero(nf_danger))>=int(np.count_nonzero(nf_danger==0)):
         print('[Static] Detected pixels exceed the maximum area allowed! -> STOP')
         debug = {
-            "nonfloor": nonfloor,
+            "nonfloor": nonfloor_mask,
             "nf_danger": nf_danger,
             "area_pct": 0,
             "elong" : 0,
-            'threshold':None,
             "fill": 0
         }
         return True, None, debug
@@ -198,11 +148,10 @@ def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = 
         print(f"[Static] Best={best_bbox} area_pct={area_pct:.2f}% STOP={stop}")
 
     debug = {
-        "nonfloor": nonfloor,
+        "nonfloor": nonfloor_mask,
         "nf_danger": nf_danger,
         "area_pct": area_pct,
         "elong" : params_dbg[0] if params_dbg is not None else 0,
-        'threshold':thr,
         "fill": params_dbg[1] if params_dbg is not None else 0
     }
     return stop, best_bbox, debug
