@@ -133,8 +133,46 @@ def send_dashboard_update():
 
 @app.route('/api/health')
 def health_check():
-    """Simple health check endpoint"""
-    return jsonify({'status': 'ok', 'service': 'RobotOS Dashboard'})
+    """Health check endpoint with controller status"""
+    import pygame
+    
+    # Check controller status
+    controller_status = {
+        'connected': False,
+        'name': None,
+        'device_path': None
+    }
+    
+    try:
+        pygame.init()
+        pygame.joystick.init()
+        count = pygame.joystick.get_count()
+        
+        if count > 0:
+            joy = pygame.joystick.Joystick(0)
+            joy.init()
+            controller_status['connected'] = True
+            controller_status['name'] = joy.get_name()
+            
+            # Try to find device path
+            import os
+            if os.path.exists('/dev/input/by-id'):
+                devices = os.listdir('/dev/input/by-id')
+                joystick_devices = [d for d in devices if 'joystick' in d.lower() or 'xbox' in d.lower()]
+                if joystick_devices:
+                    controller_status['device_path'] = f"/dev/input/by-id/{joystick_devices[0]}"
+            
+            joy.quit()
+        pygame.joystick.quit()
+    except Exception as e:
+        controller_status['error'] = str(e)
+    
+    return jsonify({
+        'status': 'ok',
+        'service': 'RobotOS Dashboard',
+        'controller': controller_status,
+        'rpi_connected': rpi_connected
+    })
 
 
 @app.route('/api/control', methods=['POST'])

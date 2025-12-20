@@ -4,6 +4,33 @@ Quick reference for all operational scripts in the RobotOS system.
 
 ## 🚀 Deployment Scripts
 
+### `deploy_production.sh` - Production Deployment ⭐
+**Purpose**: Deploy entire system with production configuration  
+**When to use**: Production environment, live deployment, stable releases
+
+**What it does**:
+1. Loads `.env.production` configuration
+2. Builds optimized Docker images with version tags
+3. Deploys server with production settings (always restart, log rotation, resource limits)
+4. Deploys to RPi with production container config
+5. Verifies health checks
+6. Records deployment version and timestamp
+
+**Usage**:
+```bash
+./deploy_production.sh
+```
+
+**Production features**:
+- Always-restart policy for high availability
+- Log rotation (10MB max, 3 files)
+- Resource limits (CPU/memory)
+- Network-accessible dashboard (0.0.0.0)
+- INFO-level logging
+- Version tracking
+
+---
+
 ### `setup_auto_bot.sh` - Initial Setup
 **Purpose**: First-time installation and deployment of entire system  
 **When to use**: Fresh installation, new RPi, or complete system reset
@@ -94,18 +121,43 @@ Quick reference for all operational scripts in the RobotOS system.
 
 ---
 
+## � Utility Scripts
+
+### `check_controller.sh` - Xbox Controller Diagnostics
+**Purpose**: Diagnose Xbox controller connection issues  
+**When to use**: Controller not detected, troubleshooting input devices
+
+**What it checks**:
+1. Host system input devices and permissions
+2. Docker container device access
+3. pygame controller detection
+4. API health endpoint status
+
+**Usage**:
+```bash
+./check_controller.sh
+```
+
+**Provides**: Detailed diagnostics and step-by-step fixes
+
+---
+
 ## 📋 Script Decision Tree
 
 ```
 ┌─ Need to... ─────────────────────────────┐
 │                                          │
+├─ Production deployment? ─────────────────┼─> deploy_production.sh ⭐
+│                                          │
 ├─ First time setup? ──────────────────────┼─> setup_auto_bot.sh
 │                                          │
-├─ Update code? ───────────────────────────┼─> auto_update.sh
+├─ Update code (dev)? ─────────────────────┼─> auto_update.sh
 │                                          │
 ├─ Stop everything? ───────────────────────┼─> shutdown_all.sh
 │                                          │
 ├─ Test configuration? ────────────────────┼─> test_setup.sh
+│                                          │
+├─ Controller issues? ─────────────────────┼─> check_controller.sh
 │                                          │
 └──────────────────────────────────────────┘
 ```
