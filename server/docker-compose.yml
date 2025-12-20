@@ -11,8 +11,8 @@ services:
     volumes:
       - ./data:/app/data  # Persist logs/data
     # Uncomment if using Xbox controller directly from container
-    # devices:
-    #   - "/dev/input:/dev/input"
+    devices:
+      - "/dev/input:/dev/input"
     environment:
       - PYTHONUNBUFFERED=1
     healthcheck:

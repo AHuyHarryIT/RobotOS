@@ -17,7 +17,7 @@ if [ -f .env ]; then
     echo -e "${GREEN}Loading configuration from .env...${NC}"
     set -a
     # shellcheck disable=SC1091
-    source <(grep -E '^[A-Za-z_]' .env | sed 's/#.*$//')
+    source .env
     set +a
 fi
 
@@ -162,22 +162,32 @@ deploy_server() {
 deploy_rpi() {
     echo -e "${YELLOW}[6/7] Deploying to Raspberry Pi...${NC}"
     
+    # Prepare SSH command prefix (with or without password)
+    if [ -n "${RPI_PASSWORD}" ] && command_exists sshpass; then
+        SSH_CMD="sshpass -p '${RPI_PASSWORD}' ssh"
+        SCP_CMD="sshpass -p '${RPI_PASSWORD}' scp"
+    else
+        SSH_CMD="ssh"
+        SCP_CMD="scp"
+    fi
+    
     # Check SSH connectivity
     echo -e "${BLUE}Testing SSH connection to ${RPI_USER}@${RPI_IP}...${NC}"
-    if ! ssh "${RPI_USER}@${RPI_IP}" exit 2>/dev/null; then
+    if ! ${SSH_CMD} -o ConnectTimeout=5 "${RPI_USER}@${RPI_IP}" exit 2>/dev/null; then
         echo -e "${RED}✗ Cannot connect to RPi via SSH${NC}"
         echo -e "${YELLOW}Please ensure:${NC}"
         echo "  1. RPi is powered on and connected to network"
         echo "  2. SSH is enabled on RPi"
         echo "  3. SSH keys are configured (or password authentication is enabled)"
         echo "  4. RPI_IP is correct: ${RPI_IP}"
+        echo "  5. RPI_PASSWORD is set in .env if using password auth"
         return 1
     fi
     echo -e "${GREEN}✓ SSH connection successful${NC}"
     
     # Install Docker on RPi
     echo -e "${BLUE}Ensuring Docker is installed on RPi...${NC}"
-    ssh "${RPI_USER}@${RPI_IP}" bash -s <<'EOF'
+    ${SSH_CMD} "${RPI_USER}@${RPI_IP}" bash -s <<'EOF'
 set -e
 if ! command -v docker &>/dev/null; then
   echo "[RPI] Installing Docker..."
@@ -193,23 +203,23 @@ EOF
     
     # Create directory and copy files
     echo -e "${BLUE}Copying files to RPi...${NC}"
-    ssh "${RPI_USER}@${RPI_IP}" "rm -rf '${RPI_DEST_DIR}' && mkdir -p '${RPI_DEST_DIR}'"
+    ${SSH_CMD} "${RPI_USER}@${RPI_IP}" "rm -rf '${RPI_DEST_DIR}' && mkdir -p '${RPI_DEST_DIR}'"
     
     # Copy rpi code
-    scp -r rpi/* "${RPI_USER}@${RPI_IP}:${RPI_DEST_DIR}/"
+    ${SCP_CMD} -r rpi/* "${RPI_USER}@${RPI_IP}:${RPI_DEST_DIR}/"
     
     # Copy .env file (create if doesn't exist in rpi/)
     if [ ! -f "rpi/.env" ]; then
         echo -e "${BLUE}Creating rpi/.env from root .env...${NC}"
         cp .env rpi/.env
     fi
-    scp rpi/.env "${RPI_USER}@${RPI_IP}:${RPI_DEST_DIR}/.env"
+    ${SCP_CMD} rpi/.env "${RPI_USER}@${RPI_IP}:${RPI_DEST_DIR}/.env"
     
     echo -e "${GREEN}✓ Files copied${NC}"
     
     # Build and run container on RPi
     echo -e "${BLUE}Building and starting container on RPi...${NC}"
-    ssh "${RPI_USER}@${RPI_IP}" bash -s <<EOF
+    ${SSH_CMD} "${RPI_USER}@${RPI_IP}" bash -s <<EOF
 set -e
 cd "${RPI_DEST_DIR}"
 

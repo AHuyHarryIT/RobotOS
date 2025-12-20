@@ -32,6 +32,15 @@ RPI_IMAGE="${RPI_BASE}:${VERSION}"
 
 echo "[UPDATE] VERSION=${VERSION}"
 
+# Prepare SSH command prefix (with or without password)
+if [ -n "${RPI_PASSWORD:-}" ] && command -v sshpass >/dev/null 2>&1; then
+  SSH_CMD="sshpass -p '${RPI_PASSWORD}' ssh"
+  SCP_CMD="sshpass -p '${RPI_PASSWORD}' scp"
+else
+  SSH_CMD="ssh"
+  SCP_CMD="scp"
+fi
+
 # Sync .env to server/ and rpi/ directories
 echo "[UPDATE] Syncing .env files..."
 cp .env server/.env
@@ -50,8 +59,8 @@ echo "[UPDATE] Restarting server container..."
 
 # 2) Copy rpi code & rebuild image on RPi
 echo "[UPDATE] Copying rpi/ to RPi..."
-scp -r rpi/* "${RPI_USER}@${RPI_IP}:${RPI_DEST_DIR}/"
-ssh "${RPI_USER}@${RPI_IP}" bash -s <<EOF
+${SCP_CMD} -r rpi/* "${RPI_USER}@${RPI_IP}:${RPI_DEST_DIR}/"
+${SSH_CMD} "${RPI_USER}@${RPI_IP}" bash -s <<EOF
 set -e
 cd "${RPI_DEST_DIR}"
 sudo docker build -t "${RPI_IMAGE}" -t "${RPI_BASE}:latest" .
