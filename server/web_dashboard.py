@@ -33,6 +33,8 @@ sequence_input_queue = []  # Queue for sequence commands from web
 update_event = Event()
 background_update_thread = None
 
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+
 
 def periodic_dashboard_update():
     """Background thread to send periodic dashboard updates for uptime/heartbeat"""
@@ -428,4 +430,4 @@ def run_dashboard_background(host='0.0.0.0', port=5000, sock=None):
 
 if __name__ == '__main__':
     # Run dashboard directly when script is executed
-    run_dashboard(debug=True)
+    run_dashboard(debug=DEBUG)
