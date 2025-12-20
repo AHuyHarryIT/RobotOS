@@ -42,12 +42,41 @@
             gap: 15px;
         }
         
+        .status-indicators {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
         .status-indicator {
             display: inline-block;
             width: 20px;
             height: 20px;
             border-radius: 50%;
             animation: pulse 2s infinite;
+            cursor: help;
+            position: relative;
+        }
+        
+        .status-indicator::before {
+            content: attr(title);
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        
+        .status-indicator:hover::before {
+            opacity: 1;
         }
         
         .status-connected {
@@ -597,11 +626,17 @@
         <div class="header">
             <h1>
                 🤖 RobotOS Command Dashboard
-                <span class="status-indicator" id="statusIndicator"></span>
+                <div class="status-indicators">
+                    <span class="status-indicator" id="statusIndicator" title="RPi Connection"></span>
+                    <span class="status-indicator" id="controllerIndicator" title="Controller Status"></span>
+                </div>
             </h1>
             <div class="header-info">
                 <div>
                     <strong>RPi Host:</strong> <span id="rpiHost">{{ rpi_host }}</span>
+                </div>
+                <div>
+                    <strong>Controller:</strong> <span id="controllerStatus">Checking...</span>
                 </div>
                 <div>
                     <strong>Uptime:</strong> <span id="uptime">-</span>
@@ -772,6 +807,10 @@
             });
             
             socket.on('dashboard_update', function(data) {
+                console.log('Received dashboard update:', {
+                    total: data.stats?.total_commands,
+                    history: data.history?.length
+                });
                 updateDashboardUI(data);
             });
             
@@ -791,10 +830,25 @@
             // Hide error message on successful connection
             document.getElementById('errorMessage').style.display = 'none';
             
-            // Update connection status
+            // Update RPi connection status
             const statusIndicator = document.getElementById('statusIndicator');
             statusIndicator.className = 'status-indicator ' + 
                 (data.rpi_connected ? 'status-connected' : 'status-disconnected');
+            statusIndicator.title = data.rpi_connected ? 'RPi Connected' : 'RPi Disconnected';
+            
+            // Update controller connection status
+            const controllerIndicator = document.getElementById('controllerIndicator');
+            const controllerStatus = document.getElementById('controllerStatus');
+            
+            if (data.controller_connected) {
+                controllerIndicator.className = 'status-indicator status-connected';
+                controllerIndicator.title = 'Controller Connected';
+                controllerStatus.textContent = data.controller_name || 'Connected';
+            } else {
+                controllerIndicator.className = 'status-indicator status-disconnected';
+                controllerIndicator.title = 'Controller Disconnected';
+                controllerStatus.textContent = 'Not connected';
+            }
             
             // Update stats
             document.getElementById('totalCommands').textContent = 
@@ -819,8 +873,8 @@
                     const item = document.createElement('div');
                     item.className = 'history-item';
                     item.innerHTML = `
-                        <span class="badge ${getSourceBadgeClass(entry.source)}">${entry.source}</span>
-                        <span class="command-text">${entry.command}</span>
+                        <span class="command-source ${getSourceBadgeClass(entry.source.toUpperCase())}">${entry.source.toUpperCase()}</span>
+                        <span class="command-text">${entry.processed || entry.command}</span>
                         <span class="timestamp">${formatTimestamp(entry.timestamp)}</span>
                     `;
                     historyContainer.appendChild(item);

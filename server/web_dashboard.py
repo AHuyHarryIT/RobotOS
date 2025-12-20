@@ -24,9 +24,16 @@ last_heartbeat_time = None
 rpi_connected = False
 zmq_socket = None  # Will be set when dashboard is started
 
+# Controller state tracking
+controller_connected = False
+controller_name = None
+controller_last_check = 0
+
 # Mode control state
 current_mode = "idle"  # idle, sequence, controller, server
 mode_active = False
+mode_thread = None  # Thread running the current mode
+mode_stop_event = Event()  # Event to signal mode thread to stop
 sequence_input_queue = []  # Queue for sequence commands from web
 
 # Event for signaling updates
@@ -45,6 +52,21 @@ def periodic_dashboard_update():
         except Exception as e:
             print(f"[Warning] Periodic update failed: {e}")
 
+def controller_mode_thread():
+    """Run controller mode loop"""
+    global mode_active
+    try:
+        print("[Mode] Starting controller mode...")
+        mode_active = True
+        from controller_mode import controller_loop
+        controller_loop(zmq_socket)
+    except Exception as e:
+        print(f"[Mode] Controller mode error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        mode_active = False
+        print("[Mode] Controller mode stopped")
 
 def update_heartbeat_status():
     """
@@ -55,6 +77,48 @@ def update_heartbeat_status():
     # This will be updated by the main client when receiving heartbeats
     # For now, we'll just track the status
     pass
+
+
+def check_controller_status():
+    """
+    Check if Xbox controller is connected
+    Updates global controller_connected and controller_name
+    Returns: True if connected, False otherwise
+    """
+    global controller_connected, controller_name, controller_last_check
+    
+    # Throttle checks to avoid overhead (max once per second)
+    now = time.time()
+    if now - controller_last_check < 1.0:
+        return controller_connected
+    
+    controller_last_check = now
+    
+    try:
+        import pygame
+        if not pygame.get_init():
+            pygame.init()
+        if not pygame.joystick.get_init():
+            pygame.joystick.init()
+        
+        count = pygame.joystick.get_count()
+        
+        if count > 0:
+            joy = pygame.joystick.Joystick(0)
+            if not joy.get_init():
+                joy.init()
+            controller_connected = True
+            controller_name = joy.get_name()
+            return True
+        else:
+            controller_connected = False
+            controller_name = None
+            return False
+            
+    except Exception as e:
+        controller_connected = False
+        controller_name = None
+        return False
 
 
 @app.route('/')
@@ -119,61 +183,53 @@ def send_dashboard_update():
         uptime_seconds = int(time.time() - app.start_time) if hasattr(app, 'start_time') else 0
         uptime_str = format_uptime(uptime_seconds)
         
+        # Check controller status
+        check_controller_status()
+        
         data = {
             'stats': stats,
             'history': history,
             'uptime': uptime_str,
             'rpi_connected': rpi_connected,
             'last_heartbeat': last_heartbeat_time,
+            'controller_connected': controller_connected,
+            'controller_name': controller_name,
             'timestamp': time.time()
         }
         
+        print(f"[Dashboard] Broadcasting update - Commands: {stats.get('total_commands', 0)}, History: {len(history)}")
         socketio.emit('dashboard_update', data, namespace='/')
     except Exception as e:
         print(f"[Warning] Failed to send dashboard update: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @app.route('/api/health')
 def health_check():
     """Health check endpoint with controller status"""
-    import pygame
-    
-    # Check controller status
-    controller_status = {
-        'connected': False,
-        'name': None,
-        'device_path': None
-    }
-    
-    try:
-        pygame.init()
-        pygame.joystick.init()
-        count = pygame.joystick.get_count()
-        
-        if count > 0:
-            joy = pygame.joystick.Joystick(0)
-            joy.init()
-            controller_status['connected'] = True
-            controller_status['name'] = joy.get_name()
-            
-            # Try to find device path
-            import os
-            if os.path.exists('/dev/input/by-id'):
-                devices = os.listdir('/dev/input/by-id')
-                joystick_devices = [d for d in devices if 'joystick' in d.lower() or 'xbox' in d.lower()]
-                if joystick_devices:
-                    controller_status['device_path'] = f"/dev/input/by-id/{joystick_devices[0]}"
-            
-            joy.quit()
-        pygame.joystick.quit()
-    except Exception as e:
-        controller_status['error'] = str(e)
+    check_controller_status()
     
     return jsonify({
         'status': 'ok',
         'service': 'RobotOS Dashboard',
-        'controller': controller_status,
+        'controller': {
+            'connected': controller_connected,
+            'name': controller_name
+        },
         'rpi_connected': rpi_connected
+    })
+
+
+@app.route('/api/controller/status')
+def get_controller_status():
+    """Get detailed controller connection status"""
+    check_controller_status()
+    
+    return jsonify({
+        'connected': controller_connected,
+        'name': controller_name,
+        'timestamp': time.time()
     })
 
 
@@ -248,7 +304,7 @@ def change_mode():
     Change operation mode
     Modes: idle, sequence, controller, server
     """
-    global current_mode, mode_active
+    global current_mode, mode_active, mode_thread, mode_stop_event
     
     try:
         data = request.get_json()
@@ -262,29 +318,55 @@ def change_mode():
             }), 400
         
         # Stop current mode if active
-        if mode_active:
+        if mode_active and mode_thread and mode_thread.is_alive():
+            print(f"[Mode] Stopping current mode: {current_mode}")
+            mode_stop_event.set()
             mode_active = False
-            time.sleep(0.5)  # Give time to stop
+            time.sleep(1.0)  # Give time to stop
+            mode_stop_event.clear()
         
         # Set new mode
         current_mode = new_mode
+        print(f"[Mode] Changing to mode: {new_mode}")
         
-        # Broadcast mode change to all connected clients (async to avoid blocking)
+        # Start the appropriate mode thread
+        if new_mode == 'controller':
+            if not zmq_socket:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'ZMQ socket not initialized. Cannot start controller mode.'
+                }), 503
+            
+            mode_thread = Thread(target=controller_mode_thread, daemon=True, name="ControllerMode")
+            mode_thread.start()
+            print("[Mode] Controller mode thread started")
+        elif new_mode == 'idle':
+            mode_active = False
+            print("[Mode] Idle mode - no active control")
+        elif new_mode == 'server':
+            mode_active = False
+            print("[Mode] Server only mode - waiting for external commands")
+        elif new_mode == 'sequence':
+            mode_active = False
+            print("[Mode] Sequence mode - send commands via web interface")
+        
+        # Broadcast mode change to all connected clients
         try:
-            socketio.emit('mode_changed', {'mode': current_mode}, namespace='/')
+            socketio.emit('mode_changed', {'mode': current_mode, 'active': mode_active}, namespace='/')
         except Exception as emit_error:
             print(f"[Warning] Failed to emit mode_changed: {emit_error}")
-        
-        # Note: Actual mode execution should be handled by background threads
-        # This just tracks the requested mode
         
         return jsonify({
             'status': 'success',
             'mode': current_mode,
+            'active': mode_active,
             'message': f'Mode changed to {new_mode}'
         })
         
     except Exception as e:
+        print(f"[Error] Mode change failed: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'status': 'error',
             'message': str(e)
