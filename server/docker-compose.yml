@@ -8,6 +8,7 @@ services:
     restart: unless-stopped
     ports:
       - "5000:5000"  # Web dashboard
+      - "5557:5557"  # Robot communication
     volumes:
       - ./data:/app/data  # Persist logs/data
       - /dev/input:/dev/input:ro  # Read-only access to input devices
