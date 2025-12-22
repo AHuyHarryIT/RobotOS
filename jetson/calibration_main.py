@@ -417,7 +417,7 @@ def main():
 
                     else:
                         if turning:
-                            command_to_send = "stop"
+                            # command_to_send = "stop"
                             current_duration = 0.0
                             turning=False
                         else:
