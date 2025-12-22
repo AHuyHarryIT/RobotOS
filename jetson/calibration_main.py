@@ -295,49 +295,49 @@ def main():
     try:
         while True:
             # -------- PERIODIC ENV RELOAD --------
-            now = time.time()
-            if now - last_env_reload > ENV_RELOAD_INTERVAL:
-                cfg = reload_all_env(DOTENV_PATH)
+            # now = time.time()
+            # if now - last_env_reload > ENV_RELOAD_INTERVAL:
+            #     cfg = reload_all_env(DOTENV_PATH)
 
-                USE_BLUR = cfg["USE_BLUR"]
-                BLUR_KSIZE = cfg["BLUR_KSIZE"]
-                BLUR_SIGMA = cfg["BLUR_SIGMA"]
-                SAFE_FLUSH = cfg["SAFE_FLUSH"]
-                ACCEPTANCE = cfg["ACCEPTANCE"]
-                STOP_HOLD_FRAMES = cfg["STOP_HOLD_FRAMES"]
+            #     USE_BLUR = cfg["USE_BLUR"]
+            #     BLUR_KSIZE = cfg["BLUR_KSIZE"]
+            #     BLUR_SIGMA = cfg["BLUR_SIGMA"]
+            #     SAFE_FLUSH = cfg["SAFE_FLUSH"]
+            #     ACCEPTANCE = cfg["ACCEPTANCE"]
+            #     STOP_HOLD_FRAMES = cfg["STOP_HOLD_FRAMES"]
 
-                SEND_COMMANDS = cfg["SEND_COMMANDS"]
-                COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
-                MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
-                MOVEMENT_DURATION_TURN=cfg["MOVEMENT_DURATION_TURN"]
+            #     SEND_COMMANDS = cfg["SEND_COMMANDS"]
+            #     COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
+            #     MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
+            #     MOVEMENT_DURATION_TURN=cfg["MOVEMENT_DURATION_TURN"]
 
-                DEBUG_STATIC=cfg['DEBUG_STATIC']
-                THR_MODE=cfg['THR_MODE']
-                THR_L=cfg['THR_L']
-                THR_OFFSET=cfg['THR_OFFSET']
-                MIN_AREA=cfg['MIN_AREA']
-                MIN_THICK=cfg['MIN_THICK']
-                ASPECT_MAX=cfg['ASPECT_MAX']
-                LINE_AR_REJECT=cfg['LINE_AR_REJECT']
-                LINE_FILL_MAX=cfg['LINE_FILL_MAX']
-                AREA_PCT=cfg['AREA_PCT']
-                sp = StaticParams(DEBUG_STATIC=cfg['DEBUG_STATIC'],
-                                THR_MODE=cfg['THR_MODE'],
-                                THR_L=cfg['THR_L'],
-                                THR_OFFSET=cfg['THR_OFFSET'],
-                                MIN_AREA=cfg['MIN_AREA'],
-                                MIN_THICK=cfg['MIN_THICK'],
-                                ASPECT_MAX=cfg['ASPECT_MAX'],
-                                LINE_AR_REJECT=cfg['LINE_AR_REJECT'],
-                                LINE_FILL_MAX=cfg['LINE_FILL_MAX'],
-                                AREA_PCT=cfg['AREA_PCT'])
-                print(f'[DEBUG] SHOW WINDOWS {SHOW_DEBUG_WINDOWS}')
-                throttler.cooldown = COMMAND_COOLDOWN
+            #     DEBUG_STATIC=cfg['DEBUG_STATIC']
+            #     THR_MODE=cfg['THR_MODE']
+            #     THR_L=cfg['THR_L']
+            #     THR_OFFSET=cfg['THR_OFFSET']
+            #     MIN_AREA=cfg['MIN_AREA']
+            #     MIN_THICK=cfg['MIN_THICK']
+            #     ASPECT_MAX=cfg['ASPECT_MAX']
+            #     LINE_AR_REJECT=cfg['LINE_AR_REJECT']
+            #     LINE_FILL_MAX=cfg['LINE_FILL_MAX']
+            #     AREA_PCT=cfg['AREA_PCT']
+            #     sp = StaticParams(DEBUG_STATIC=cfg['DEBUG_STATIC'],
+            #                     THR_MODE=cfg['THR_MODE'],
+            #                     THR_L=cfg['THR_L'],
+            #                     THR_OFFSET=cfg['THR_OFFSET'],
+            #                     MIN_AREA=cfg['MIN_AREA'],
+            #                     MIN_THICK=cfg['MIN_THICK'],
+            #                     ASPECT_MAX=cfg['ASPECT_MAX'],
+            #                     LINE_AR_REJECT=cfg['LINE_AR_REJECT'],
+            #                     LINE_FILL_MAX=cfg['LINE_FILL_MAX'],
+            #                     AREA_PCT=cfg['AREA_PCT'])
+            #     print(f'[DEBUG] SHOW WINDOWS {SHOW_DEBUG_WINDOWS}')
+            #     throttler.cooldown = COMMAND_COOLDOWN
 
-                print(f"[ENV RELOAD] STOP_HOLD_FRAMES={STOP_HOLD_FRAMES}, "
-                    f"ACCEPTANCE={ACCEPTANCE}, BLUR={USE_BLUR}")
+            #     print(f"[ENV RELOAD] STOP_HOLD_FRAMES={STOP_HOLD_FRAMES}, "
+            #         f"ACCEPTANCE={ACCEPTANCE}, BLUR={USE_BLUR}")
 
-                last_env_reload = now
+            #     last_env_reload = now
 
             if not SHOW_DEBUG_WINDOWS and stop_event.is_set():
                 print("[INFO] Stop event detected. Exiting loop.")
