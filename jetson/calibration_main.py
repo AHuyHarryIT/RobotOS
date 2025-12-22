@@ -408,14 +408,12 @@ def main():
                         command_to_send = f"left {MOVEMENT_DURATION_TURN}"
                         current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
                         turning=True
-                        time.sleep(0.3)
 
                     elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
                         cond = 'RIGHT'
                         command_to_send = f"right {MOVEMENT_DURATION_TURN}"
                         current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
                         turning=True
-                        time.sleep(0.3)
 
                     else:
                         if turning:
