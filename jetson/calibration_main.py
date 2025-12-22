@@ -140,29 +140,6 @@ def main():
     parser = argparse.ArgumentParser(description="Jetson Calibration with Vision Client")
     parser.add_argument("--config", default="config.json", help="Path to config file")
     parser.add_argument("--no-send", action="store_true", help="Disable sending commands")
-    args = parser.parse_args()
-    
-    # Load config
-    '''
-    cfg = load_config(args.config)
-    
-    CAM_DEVICE = cfg["CAM_DEVICE"]
-    VIDEO_PATH = cfg["VIDEO_PATH"]
-    W = cfg["W"]
-    H = cfg["H"]
-    FPS = cfg["FPS"]
-    OUT_SCALE = cfg["OUT_SCALE"]
-    SHOW_DEBUG_WINDOWS = cfg["SHOW_DEBUG_WINDOWS"]
-    USE_BLUR = cfg["USE_BLUR"]
-    BLUR_KSIZE = cfg["BLUR_KSIZE"]
-    BLUR_SIGMA = cfg["BLUR_SIGMA"]
-    SAFE_FLUSH = cfg["SAFE_FLUSH"]
-    ACCEPTANCE = cfg["ACCEPTANCE"]
-    STOP_HOLD_FRAMES = cfg["STOP_HOLD_FRAMES"]
-    SEND_COMMANDS = cfg["SEND_COMMANDS"] and not args.no_send
-    COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
-    MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
-    '''
 
     # Load .env from the same folder as this script
     load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
@@ -214,7 +191,7 @@ def main():
                     FLOOR_PROFILE_PATH=FLOOR_PROFILE_PATH)
 
     # -------- ENV RELOAD SETUP --------
-    ENV_RELOAD_INTERVAL = 2.0  # seconds
+    ENV_RELOAD_INTERVAL = 30.0  # seconds
     last_env_reload = time.time()
 
     # Initialize ROI
@@ -431,12 +408,14 @@ def main():
                         command_to_send = f"left {MOVEMENT_DURATION_TURN}"
                         current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
                         turning=True
+                        time.sleep(0.3)
 
                     elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
                         cond = 'RIGHT'
                         command_to_send = f"right {MOVEMENT_DURATION_TURN}"
                         current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
                         turning=True
+                        time.sleep(0.3)
 
                     else:
                         if turning:
@@ -469,7 +448,7 @@ def main():
                         print(f"[ERROR] Command failed: {result}")
 
             # === PREPARE OUTPUT VIDEO ===
-            if DEBUG_STATIC and ENABLE_STATIC_STOP:
+            if  ENABLE_STATIC_STOP:
                 nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
                 nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
 
