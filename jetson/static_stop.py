@@ -55,7 +55,7 @@ class StaticParams:
         
         self.profile_loaded = self.profiler.load_profile()
         if not self.profile_loaded:
-            print(f"[StaticParams] WARN: Could not load floor profile from {FLOOR_PROFILE_PATH}")
+            print(f"[StaticParams] WARN: Could not load floor profile from {FLOOR_PROFILE_PATH}, Object Detection can't be performed.")
         else:
             print(f"[StaticParams] Floor profile loaded successfully.")
 
@@ -77,8 +77,8 @@ def _passes_shape_filters(w, h, area, p: StaticParams):
         passed, reason = False, "small"
     elif min(w, h) < p.MIN_THICK:
         passed, reason = False, "thin"
-    elif elong > p.ASPECT_MAX:
-        passed, reason = False, "absurd"
+    # elif elong > p.ASPECT_MAX:
+    #     passed, reason = False, "absurd"
     elif (elong >= p.LINE_AR_REJECT) or (fill <= p.LINE_FILL_MAX):
         passed, reason = False, "line"
 
@@ -94,8 +94,8 @@ def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = 
     Static obstacle check using FloorProfiler (Color/Sat check).
     IMPORTANT: frame_ori must be BGR (Color), not Grayscale!
     """
-    profiler = FloorProfiler(profile_path=params.FLOOR_PROFILE_PATH)
-    
+    profiler=params.profiler
+
     # --- ERROR HANDLING FIX ---
     if not params.profile_loaded:
         # Return SAFE empty masks so main loop doesn't crash
@@ -108,7 +108,7 @@ def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = 
         }
 
     # Get the defect mask (Calculates Z-scores for Color/Sat/Lightness)
-    nonfloor_mask = profiler.get_defect_mask(frame_ori, roi_mask)
+    nonfloor_mask, debug_mask = profiler.get_defect_mask(frame_ori, roi_mask)
 
     # Only danger band within ROI
     nf_danger = cv.bitwise_and(nonfloor_mask, danger_mask)
@@ -130,7 +130,7 @@ def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = 
         return True, None, debug
         
 
-    num, lbl, stats, _ = cv.connectedComponentsWithStats(nf_danger, connectivity=4)
+    num, lbl, stats, _ = cv.connectedComponentsWithStats(nonfloor_mask, connectivity=4)
     best_bbox, best_area, fill, elong = None, 0, 0, 0
     params_dbg=None
     for i in range(1, num):
