@@ -24,8 +24,8 @@ Set these values:
 ./setup_auto_bot.sh
 
 # Start miniPC client
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 ```
 
 ### 3️⃣ Test Jetson Connection
@@ -114,7 +114,7 @@ sudo python3 app.py "forward 1"
 ./auto_update.sh
 
 # Or manually
-docker-compose -f client/docker-compose.yml up -d --build
+docker-compose -f server/docker-compose.yml up -d --build
 ssh pi@<RPI_HOST> "cd auto-bot-rpi && docker build -t auto-bot-rpi . && docker restart auto-bot-rpi"
 ```
 

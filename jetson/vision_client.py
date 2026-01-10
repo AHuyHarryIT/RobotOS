@@ -8,8 +8,8 @@ Usage:
     python3 vision_client.py
     
 Environment Variables:
-    CLIENT_IP: IP address of miniPC client (default: 192.168.10.100)
-    CLIENT_SERVER_PORT: Port of client command server (default: 5557)
+    SERVER_IP: IP address of miniPC server (default: 192.168.10.100)
+    SERVER_PORT: Port of server command server (default: 5557)
 """
 
 import time
@@ -21,9 +21,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-CLIENT_IP = os.getenv("CLIENT_IP", "192.168.1.100")
-CLIENT_PORT = int(os.getenv("CLIENT_SERVER_PORT", "5557"))
-CLIENT_ADDR = f"tcp://{CLIENT_IP}:{CLIENT_PORT}"
+SERVER_IP = os.getenv("SERVER_IP", "192.168.1.100")
+SERVER_PORT = int(os.getenv("SERVER_PORT", "5557"))
+SERVER_ADDR = f"tcp://{SERVER_IP}:{SERVER_PORT}"
 
 
 class VisionClient:

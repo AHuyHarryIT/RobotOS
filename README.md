@@ -21,24 +21,27 @@ A distributed robotics control system for an RC car with **three-tier architectu
 ### Key Features
 
 - **🧠 Central Brain Architecture** - miniPC client coordinates all inputs
+- **🎯 Command Aggregation** - Unified command processing with validation and history
 - **👁️ Vision-Based Control** - Jetson Nano processes camera for autonomous driving
 - **🎮 Manual Override** - Xbox controller for manual control
 - **📝 Sequence Mode** - Text-based command sequences for testing
 - **🔒 Thread-Safe** - Safe command processing from multiple sources
 - **💓 Health Monitoring** - Heartbeat system tracks RPi status
+- **📊 Statistics & Logging** - Real-time command tracking and analytics
 - **🐳 Docker Ready** - Full containerization support
 
 ## 📁 Project Structure
 
 ```
 RobotOS/
-├── client/              # miniPC client (Brain)
-│   ├── client_main.py      # Main entry point
-│   ├── command_server.py   # Receives from Jetson
-│   ├── controller_mode.py  # Xbox gamepad control
-│   ├── seq_mode.py         # Manual command mode
-│   ├── zmq_client.py       # RPi communication
-│   └── config.py           # Configuration
+├── server/              # miniPC server (Brain)
+│   ├── main.py                # Main entry point
+│   ├── command_aggregator.py  # Central command processing hub
+│   ├── command_server.py      # Receives from Jetson
+│   ├── controller_mode.py     # Xbox gamepad control
+│   ├── seq_mode.py            # Manual command mode
+│   ├── zmq_client.py          # RPi communication
+│   └── config.py              # Configuration
 ├── rpi/                 # Raspberry Pi server (Executor)
 │   ├── zmq_server.py       # ZMQ server & motion control
 │   ├── gpio_driver.py      # GPIO pin management
@@ -49,9 +52,10 @@ RobotOS/
 │   ├── calibration.py      # Camera calibration
 │   └── README.md           # Jetson setup guide
 └── docs/
-    ├── QUICKSTART.md       # Quick start guide
-    ├── ARCHITECTURE.md     # Full architecture docs
-    └── DIAGRAM.md          # System diagrams
+    ├── QUICKSTART.md           # Quick start guide
+    ├── ARCHITECTURE.md         # Full architecture docs
+    ├── COMMAND_AGGREGATION.md  # Command aggregation system
+    └── DIAGRAM.md              # System diagrams
 ```
 
 ## 🚀 Quick Start
@@ -71,8 +75,8 @@ nano .env  # Set RPI_HOST, CLIENT_IP, etc.
 
 ### 3. Start Client (Brain)
 ```bash
-cd client/
-python3 client_main.py
+cd server/
+python3 main.py
 ```
 
 ### 4. Setup Jetson (Optional for autonomous mode)
@@ -111,6 +115,22 @@ client = VisionClient()
 client.send_command("left 0.3")
 ```
 
+### 4. Web Dashboard 🌐
+Real-time monitoring interface accessible via web browser:
+```bash
+# Access dashboard
+http://localhost:5000           # On local machine
+http://<miniPC-IP>:5000         # From other devices
+```
+
+**Dashboard Features:**
+- 📊 Real-time command statistics
+- 🎯 Commands by source (Jetson, Controller, Manual, Sequence)
+- 📜 Live command history
+- 💓 RPi connection status
+- ⏱️ System uptime tracking
+- 🔄 Auto-refresh every 1 second
+
 ## 📡 Network Ports
 
 | Port | Direction | Purpose |
@@ -118,6 +138,7 @@ client.send_command("left 0.3")
 | 5555 | Client → RPi | Command execution |
 | 5556 | RPi → Client | Heartbeat monitoring |
 | 5557 | Jetson → Client | Vision commands |
+| 5000 | Browser → Client | Web Dashboard (HTTP) |
 
 ## 🔧 Commands
 
@@ -134,7 +155,7 @@ client.send_command("left 0.3")
 
 ## 🏗️ Architecture
 
-The system uses a **3-tier architecture** where the miniPC client acts as a central brain:
+The system uses a **3-tier architecture** with centralized command aggregation:
 
 1. **Jetson (Vision Layer)**
    - Processes camera input
@@ -142,16 +163,26 @@ The system uses a **3-tier architecture** where the miniPC client acts as a cent
    - Sends high-level commands (left, right, stop)
 
 2. **Client (Decision Layer)**
+   - **Command Aggregator**: Central hub that validates and processes all commands
    - Receives from Jetson, Xbox controller, or manual input
-   - Coordinates multiple command sources
-   - Validates and forwards to RPi
+   - Tracks statistics, history, and command sources
+   - Validates commands before forwarding to RPi
 
 3. **RPi (Execution Layer)**
    - Receives unified commands
    - Controls GPIO pins safely
    - Manages motor states
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for complete details.
+### Command Flow
+```
+[Jetson]     ──┐
+[Controller] ──┼──> [Aggregator] ──> [Validator] ──> [RPi GPIO] ──> [Motors]
+[Manual]     ──┘         │
+                         ├──> [Statistics]
+                         └──> [History Log]
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) and [COMMAND_AGGREGATION.md](COMMAND_AGGREGATION.md) for complete details.
 
 ## 🔌 Hardware
 
@@ -161,7 +192,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for complete details.
 - **3-pin relay board** - Motor control
 - **RC car** with GPIO-compatible motors
 - **Xbox controller** (optional) - Manual control
-
+COMMAND_AGGREGATION.md](COMMAND_AGGREGATION.md)** - Command processing system
+- **[
 ### GPIO Wiring (BCM Mode)
 - **Pin 17** - Control bit 0
 - **Pin 27** - Control bit 1

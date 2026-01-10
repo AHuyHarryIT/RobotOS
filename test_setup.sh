@@ -38,9 +38,9 @@ echo ""
 # Test 2: Check Python files
 echo "Test 2: Core Python Files"
 files=(
-    "client/client_main.py"
-    "client/command_server.py"
-    "client/zmq_client.py"
+    "server/main.py"
+    "server/command_server.py"
+    "server/zmq_client.py"
     "rpi/zmq_server.py"
     "rpi/gpio_driver.py"
     "jetson/vision_client.py"
@@ -57,10 +57,10 @@ echo ""
 
 # Test 3: Check configurations
 echo "Test 3: Configuration Files"
-if [ -f "client/config.py" ] && grep -q "CLIENT_SERVER_PORT" client/config.py; then
-    echo -e "  ${GREEN}✓${NC} Client config has CLIENT_SERVER_PORT"
+if [ -f "server/config.py" ] && grep -q "SERVER_PORT" server/config.py; then
+    echo -e "  ${GREEN}✓${NC} Server config has SERVER_PORT"
 else
-    echo -e "  ${RED}✗${NC} Client config missing CLIENT_SERVER_PORT"
+    echo -e "  ${RED}✗${NC} Server config missing SERVER_PORT"
 fi
 
 if [ -f "jetson/.env.example" ]; then
@@ -87,20 +87,20 @@ echo ""
 
 # Test 5: Network connectivity (if IPs configured)
 echo "Test 5: Network Connectivity"
-if [ -n "$RPI_HOST" ]; then
-    if ping -c 1 -W 2 "$RPI_HOST" &> /dev/null; then
-        echo -e "  ${GREEN}✓${NC} RPi reachable at $RPI_HOST"
+if [ -n "$RPI_IP" ]; then
+    if ping -c 1 -W 2 "$RPI_IP" &> /dev/null; then
+        echo -e "  ${GREEN}✓${NC} RPi reachable at $RPI_IP"
     else
-        echo -e "  ${YELLOW}!${NC} Cannot reach RPi at $RPI_HOST"
+        echo -e "  ${YELLOW}!${NC} Cannot reach RPi at $RPI_IP"
     fi
 else
-    echo -e "  ${YELLOW}!${NC} RPI_HOST not configured in .env"
+    echo -e "  ${YELLOW}!${NC} RPI_IP not configured in .env"
 fi
 
-if [ -n "$CLIENT_IP" ]; then
-    echo -e "  ${GREEN}✓${NC} CLIENT_IP configured: $CLIENT_IP"
+if [ -n "$SERVER_IP" ]; then
+    echo -e "  ${GREEN}✓${NC} SERVER_IP configured: $SERVER_IP"
 else
-    echo -e "  ${YELLOW}!${NC} CLIENT_IP not configured in .env"
+    echo -e "  ${YELLOW}!${NC} SERVER_IP not configured in .env"
 fi
 echo ""
 
@@ -108,7 +108,7 @@ echo ""
 echo "Test 6: Port Configuration"
 echo "  ZMQ_PORT:           ${ZMQ_PORT:-'not set'}"
 echo "  HEARTBEAT_PORT:     ${HEARTBEAT_PORT:-'not set'}"
-echo "  CLIENT_SERVER_PORT: ${CLIENT_SERVER_PORT:-'not set (should be 5557)'}"
+echo "  SERVER_PORT: ${SERVER_PORT:-'not set (should be 5557)'}"
 echo ""
 
 # Test 7: Documentation
@@ -138,7 +138,7 @@ echo ""
 echo "Next Steps:"
 echo "1. Configure .env file with correct IPs"
 echo "2. Deploy RPi: ./setup_auto_bot.sh"
-echo "3. Start client: cd client/ && python3 client_main.py"
+echo "3. Start client: cd server/ && python3 main.py"
 echo "4. Setup Jetson: cd jetson/ && cp .env.example .env"
 echo ""
 echo "For more info, see QUICKSTART.md"

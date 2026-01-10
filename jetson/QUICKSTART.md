@@ -151,8 +151,8 @@ python3 vision_client.py demo
 
 # 2. Client → RPi connection  
 ssh minipc@192.168.1.100
-cd /root/test/RobotOS/client
-python3 client_main.py
+cd /root/test/RobotOS/server
+python3 main.py
 # Choose option 3 (Server Only Mode)
 
 # 3. RPi server running
@@ -258,8 +258,8 @@ cd /root/test/RobotOS
 
 # Terminal 2 - miniPC Client
 ssh user@minipc
-cd /root/test/RobotOS/client
-python3 client_main.py
+cd /root/test/RobotOS/server
+python3 main.py
 # Choose option 3
 
 # Terminal 3 - Jetson
@@ -271,4 +271,4 @@ python3 calibration_main.py
 
 - Main README: `/root/test/RobotOS/README.md`
 - Architecture: `/root/test/RobotOS/DIAGRAM.md`
-- Client docs: `/root/test/RobotOS/client/README.md`
+- Server docs: `/root/test/RobotOS/server/README.md`

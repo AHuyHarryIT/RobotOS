@@ -1,1 +1,13 @@
+# Environment files (contain secrets)
 .env
+.env.local
+.env.backup
+.env.production
+server/.env
+rpi/.env
+jetson/.env
+
+# Deployment tracking
+.last_version
+.last_production_version
+.last_production_deploy

@@ -1,0 +1,5 @@
+pyzmq
+python-dotenv
+pygame
+flask
+flask-socketio
