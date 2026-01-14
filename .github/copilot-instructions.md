@@ -5,7 +5,7 @@
 This is a **3-tier distributed robotics control system** for a 3-pin GPIO-controlled RC car:
 
 - **Jetson** (`jetson/`): Vision/calibration system - processes camera data and sends control commands (left, right, stop)
-- **Client (Brain)** (`client/`): Runs on miniPC (x86) - central decision hub that receives from multiple sources and coordinates robot control
+- **Server (Brain)** (`server/`): Runs on miniPC (x86) - central decision hub that receives from multiple sources and coordinates robot control
   - Receives vision commands from Jetson via ZMQ REP socket (port 5557)
   - Receives manual input from Xbox controller
   - Receives text commands via sequence mode
@@ -14,13 +14,13 @@ This is a **3-tier distributed robotics control system** for a 3-pin GPIO-contro
 - **Communication**: ZeroMQ REQ/REP for commands + PUB/SUB for heartbeat monitoring
 
 ```
-[Jetson Vision] --ZMQ:5557--> [miniPC Client (Brain)] --ZMQ:5555--> [RPi Server] --GPIO--> [3-pin relay board] --> [Car motors]
-[Xbox Controller] --------->         |                     <-ZMQ:5556-- (heartbeat)
+[Jetson Vision] --ZMQ:5557--> [miniPC Server (Brain)] --ZMQ:5555--> [RPi Server] --GPIO--> [3-pin relay board] --> [Car motors]
+[Xbox Controller] --------->         |                      <-ZMQ:5556-- (heartbeat)
 [Sequence Mode] ----------->         |
 ```
 
-### Key Principle: Client is the Central Brain
-The miniPC client acts as the **central processing hub** that:
+### Key Principle: Server is the Central Brain
+The miniPC server acts as the **central processing hub** that:
 1. Aggregates inputs from multiple sources (Jetson vision, Xbox controller, manual commands)
 2. Makes decisions and processes commands
 3. Forwards unified commands to RPi for GPIO execution
@@ -37,11 +37,11 @@ This architecture allows autonomous (Jetson vision) and manual control (Xbox/seq
 
 Both scripts:
 1. Read `.env` for config (RPI_HOST, RPI_USER, ZMQ_PORT, etc.)
-2. Auto-copy `.env` to `client/.env` and `rpi/.env`
+2. Auto-copy `.env` to `server/.env` and `rpi/.env`
 3. Build Docker images with timestamp+git-sha tags
 4. Deploy via SSH + docker commands
 
-**Never** edit `client/.env` or `rpi/.env` directly - they're auto-generated from root `.env`.
+**Never** edit `server/.env` or `rpi/.env` directly - they're auto-generated from root `.env`.
 
 ## GPIO Control States
 
@@ -69,10 +69,10 @@ Sequences: `seq forward 2; right 1; lock 0.5; stop`
 
 Parsing: `parser.py` uses `CMD_PATTERN` regex + `ALIASES` dict. Always handle both formats (space/colon separated).
 
-## Client Modes
+## Server Modes
 
 ### Command Server Mode (`command_server.py`)
-- Runs in background thread automatically when client starts
+- Runs in background thread automatically when server starts
 - Binds ZMQ REP socket on port 5557
 - Receives commands from Jetson vision system
 - Forwards all received commands to RPi via existing zmq_client
@@ -99,26 +99,26 @@ Parsing: `parser.py` uses `CMD_PATTERN` regex + `ALIASES` dict. Always handle bo
 
 All timing/network params read from `.env` via `python-dotenv`:
 ```python
-# Client config
+# Server config
 RPI_HOST=192.168.31.211         # RPi IP address
-ZMQ_PORT=5555                   # Port for client->RPi commands
-HEARTBEAT_PORT=5556             # Port for RPi->client heartbeat
-CLIENT_SERVER_PORT=5557         # Port for Jetson->client commands
+ZMQ_PORT=5555                   # Port for server->RPi commands
+HEARTBEAT_PORT=5556             # Port for RPi->server heartbeat
+CLIENT_SERVER_PORT=5557         # Port for Jetson->server commands
 DUR_FORWARD=0.5                 # movement step duration
-SEND_COOLDOWN=0.05              # client rate limit
+SEND_COOLDOWN=0.05              # server rate limit
 
 # Jetson config
 CLIENT_IP=192.168.10.100        # miniPC IP address
-CLIENT_PORT=5557                # Client command server port
+CLIENT_PORT=5557                # Server command server port
 ```
 
-Client: `config.py` loads from `client/.env`  
-Server: `zmq_server.py` loads from `rpi/.env`  
+Server: `config.py` loads from `server/.env`  
+RPi: `zmq_server.py` loads from `rpi/.env`  
 Jetson: `vision_client.py` loads from `jetson/.env`
 
 ## Docker Quirks
 
-**Client container**:
+**Server container**:
 - `network_mode: host` to reach RPi on local network
 - `devices: /dev/input` needed if reading joystick from container (currently commented out)
 
@@ -157,7 +157,7 @@ sudo python3 app.py "seq forward 2; stop"
 
 ## Safety Principles
 
-1. **Always stop on disconnect/error** - Client sends `stop` on KeyboardInterrupt, controller disconnect, heartbeat loss
+1. **Always stop on disconnect/error** - Server sends `stop` on KeyboardInterrupt, controller disconnect, heartbeat loss
 2. **Motion cancellation** - New commands immediately cancel old ones via `stop_motion()`
 3. **GPIO cleanup** - `GPIODriver.cleanup()` always called in `finally` blocks
 4. **Privileged access** - Docker needs `--privileged` for GPIO, never run as root unnecessarily
