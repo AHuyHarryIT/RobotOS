@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  jetson-vision:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: autobot-jetson-vision
+    
+    environment:
+      # Jetson config - use host network to reach server
+      JETSON_SERVER_IP: ${JETSON_SERVER_IP:-192.168.10.100}
+      SERVER_CMD_PORT: ${SERVER_CMD_PORT:-5557}
+      
+      # Logging
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    
+    # Use host network to reach server on same LAN
+    network_mode: host
+    
+    # Mount config files
+    volumes:
+      - ./config:/app/jetson/config:rw
+      - ./floor_profile.json:/app/jetson/floor_profile.json:rw
+      - ./roi_points.txt:/app/jetson/roi_points.txt:rw
+      - /app/logs:/app/logs:rw
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    # Resource limits for Jetson
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    
+    # Keep container running, restart on failure
+    restart: unless-stopped
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import zmq; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
