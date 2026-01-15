@@ -4,17 +4,82 @@ Command server running on miniPC client.
 Receives commands from external sources (Jetson, web API, etc.) via ZMQ REP socket.
 Processes commands through the central aggregator and forwards to RPi for GPIO execution.
 
+Also handles calibration signaling:
+- Receives calibration pause requests from Jetson
+- Signals calibration completion to Jetson
+- Integrates with sequence mode for seamless pause/resume
+
 This server acts as the entry point for all Jetson vision commands.
 """
 import threading
 import time
 import zmq
+import json
 from zmq_client import send_command
 from config import SERVER_PORT
 from command_aggregator import get_aggregator, CommandSource, CommandPriority
+from calibration_coordinator import get_calibration_coordinator
 
 server_running = False
 server_thread = None
+
+
+def _handle_calibration_message(msg_obj: dict, coordinator) -> dict:
+    """
+    Handle calibration-related messages from Jetson.
+    
+    Message types:
+    - {"type": "calibration_pause", "phase": "forward", "elapsed": 0.5, "total": 2.0}
+    - {"type": "calibration_done"}
+    
+    Args:
+        msg_obj: Parsed JSON message object
+        coordinator: CalibrationCoordinator instance
+        
+    Returns:
+        dict: Response to send back to Jetson
+    """
+    msg_type = msg_obj.get("type", "").lower()
+    
+    if msg_type == "calibration_pause":
+        phase = msg_obj.get("phase", "unknown")
+        elapsed = msg_obj.get("elapsed", 0)
+        total = msg_obj.get("total", 0)
+        
+        print(f"[CMD SERVER] Calibration pause request: {phase} ({elapsed:.2f}s / {total:.2f}s)")
+        
+        success = coordinator.request_calibration_pause(phase, elapsed, total)
+        
+        return {
+            "status": "ok" if success else "rejected",
+            "message": f"Pause {'accepted' if success else 'rejected'} for {phase}",
+            "paused": success
+        }
+    
+    elif msg_type == "calibration_done":
+        print("[CMD SERVER] Calibration complete signal from Jetson")
+        coordinator.signal_calibration_complete(source="jetson")
+        
+        return {
+            "status": "ok",
+            "message": "Calibration completion acknowledged"
+        }
+    
+    elif msg_type == "calibration_status":
+        status = coordinator.get_calibration_status()
+        print(f"[CMD SERVER] Calibration status query: {status}")
+        
+        return {
+            "status": "ok",
+            "calibration_active": status.get("active"),
+            "paused_motion": status.get("paused_motion")
+        }
+    
+    else:
+        return {
+            "status": "error",
+            "message": f"Unknown calibration message type: {msg_type}"
+        }
 
 
 def command_server_loop(zmq_to_rpi_sock):
@@ -22,14 +87,16 @@ def command_server_loop(zmq_to_rpi_sock):
     Main loop for command server.
     Binds REP socket to receive commands from Jetson/external sources.
     Processes commands through aggregator and forwards to RPi.
+    Handles calibration pause/resume requests.
     
     Args:
         zmq_to_rpi_sock: The ZMQ REQ socket connected to RPi (shared from main)
     """
     global server_running
     
-    # Get the global command aggregator instance
+    # Get the global command aggregator and calibration coordinator instances
     aggregator = get_aggregator()
+    coordinator = get_calibration_coordinator()
     
     ctx = zmq.Context.instance()
     server_sock = ctx.socket(zmq.REP)
@@ -38,6 +105,7 @@ def command_server_loop(zmq_to_rpi_sock):
     
     print(f"[CMD SERVER] Listening on {bind_addr} for external commands")
     print("[CMD SERVER] Ready to receive from Jetson, web API, etc.")
+    print("[CMD SERVER] Calibration coordination enabled")
     print("[CMD SERVER] All commands will be processed through central aggregator")
     
     server_running = True
@@ -51,55 +119,61 @@ def command_server_loop(zmq_to_rpi_sock):
                     print(f"[CMD SERVER] <- Received: {raw}")
                     
                     # Parse incoming message
-                    import json
                     try:
                         msg_obj = json.loads(raw)
-                        payload = msg_obj.get("cmd", raw)
                     except:
                         # If not JSON, treat as plain command string
-                        payload = raw.strip()
+                        msg_obj = {"cmd": raw.strip()}
                     
-                    # Process command through central aggregator
-                    # Jetson commands typically have high priority for autonomous control
-                    success, processed_cmd, msg = aggregator.process_command(
-                        command=payload,
-                        source=CommandSource.JETSON,
-                        priority=CommandPriority.HIGH
-                    )
-                    
-                    if success and processed_cmd:
-                        # Forward validated command to RPi
-                        try:
-                            send_command(zmq_to_rpi_sock, processed_cmd)
-                            
-                            # Trigger WebSocket update
+                    # Check if this is a calibration message
+                    if msg_obj.get("type"):
+                        # Calibration signaling message
+                        reply = _handle_calibration_message(msg_obj, coordinator)
+                    else:
+                        # Regular motion command
+                        payload = msg_obj.get("cmd", raw.strip())
+                        
+                        # Process command through central aggregator
+                        # Jetson commands typically have high priority for autonomous control
+                        success, processed_cmd, msg = aggregator.process_command(
+                            command=payload,
+                            source=CommandSource.JETSON,
+                            priority=CommandPriority.HIGH
+                        )
+                        
+                        if success and processed_cmd:
+                            # Forward validated command to RPi
                             try:
-                                from web_dashboard import send_dashboard_update
-                                send_dashboard_update()
-                            except:
-                                pass  # Dashboard might not be running
-                            
+                                send_command(zmq_to_rpi_sock, processed_cmd)
+                                
+                                # Trigger WebSocket update
+                                try:
+                                    from web_dashboard import send_dashboard_update
+                                    send_dashboard_update()
+                                except:
+                                    pass  # Dashboard might not be running
+                                
+                                reply = {
+                                    "status": "ok", 
+                                    "cmd": processed_cmd, 
+                                    "original": payload,
+                                    "forwarded": True,
+                                    "message": msg
+                                }
+                            except Exception as e:
+                                print(f"[CMD SERVER] Error forwarding to RPi: {e}")
+                                reply = {
+                                    "status": "error", 
+                                    "error": str(e), 
+                                    "forwarded": False
+                                }
+                        else:
+                            # Command validation failed
                             reply = {
-                                "status": "ok", 
-                                "cmd": processed_cmd, 
-                                "original": payload,
-                                "forwarded": True,
-                                "message": msg
-                            }
-                        except Exception as e:
-                            print(f"[CMD SERVER] Error forwarding to RPi: {e}")
-                            reply = {
-                                "status": "error", 
-                                "error": str(e), 
+                                "status": "error",
+                                "error": msg,
                                 "forwarded": False
                             }
-                    else:
-                        # Command validation failed
-                        reply = {
-                            "status": "error",
-                            "error": msg,
-                            "forwarded": False
-                        }
                     
                     # Reply to external source (Jetson)
                     server_sock.send_string(json.dumps(reply))
