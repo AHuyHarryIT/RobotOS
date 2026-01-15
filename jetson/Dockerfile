@@ -1,16 +1,23 @@
 # Jetson Docker - CI/CD Pipeline & Vision System
 
-FROM nvcr.io/nvidia/l4t-runtime:r35.3.1
+FROM ubuntu:20.04
+
+# Set environment for non-interactive install
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
 
 # Set working directory
 WORKDIR /app/jetson
 
-# Install system dependencies
+# Install system dependencies including CUDA runtime
 RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-dev \
     libzmq3-dev \
     pkg-config \
+    ca-certificates \
+    curl \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for better layer caching)
