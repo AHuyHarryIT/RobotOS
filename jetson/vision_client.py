@@ -98,7 +98,7 @@ def calibration_demo():
     client.connect()
     
     if not client.connected:
-        print("[VISION] Failed to connect. Check CLIENT_IP and CLIENT_PORT in .env")
+        print("[VISION] Failed to connect. Check JETSON_SERVER_IP and SERVER_CMD_PORT in .env")
         return
     
     print("\n=== Calibration Demo ===")
@@ -141,7 +141,7 @@ def interactive_mode():
     client.connect()
     
     if not client.connected:
-        print("[VISION] Failed to connect. Check CLIENT_IP and CLIENT_PORT in .env")
+        print("[VISION] Failed to connect. Check JETSON_SERVER_IP and SERVER_CMD_PORT in .env")
         return
     
     print("\n=== Interactive Vision Client ===")
