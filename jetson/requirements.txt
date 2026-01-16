@@ -1,4 +1,4 @@
 opencv-python
 numpy
-python3-zmq
+pyzmq
 python-dotenv

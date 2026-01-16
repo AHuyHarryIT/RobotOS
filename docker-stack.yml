@@ -1,0 +1,160 @@
+version: '3.9'
+
+services:
+  # Docker Registry (on miniPC manager only)
+  registry:
+    image: registry:2
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+    networks:
+      - robotos_network
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # Server (miniPC - manager only)
+  server:
+    image: localhost:5000/robotos-server:latest
+    ports:
+      - "8080:8080"
+      - "5555:5555"
+      - "5557:5557"
+    environment:
+      SERVER_IP: ${SERVER_IP}
+      ZMQ_PORT: ${ZMQ_PORT}
+      SERVER_PORT: ${SERVER_PORT}
+      PYTHONUNBUFFERED: 1
+    env_file: server/.env
+    networks:
+      - robotos_network
+    volumes:
+      - server_logs:/app/logs
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # RPi Worker - GPIO Motion Control
+  rpi:
+    image: localhost:5000/auto-bot-rpi:latest
+    environment:
+      RPI_IP: ${RPI_IP}
+      RPI_USER: ${RPI_USER}
+      SERVER_IP: ${SERVER_IP}
+      ZMQ_PORT: ${ZMQ_PORT}
+      HEARTBEAT_PORT: ${HEARTBEAT_PORT}
+      DUR_FORWARD: ${DUR_FORWARD}
+      DUR_BACKWARD: ${DUR_BACKWARD}
+      DUR_TURN: ${DUR_TURN}
+      SEND_COOLDOWN: ${SEND_COOLDOWN}
+      PYTHONUNBUFFERED: 1
+    env_file: rpi/.env
+    networks:
+      - robotos_network
+    privileged: true
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${RPI_HOSTNAME:-rpi-node}
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Jetson Worker - Vision Processing
+  jetson:
+    image: localhost:5000/jetson-vision:latest
+    environment:
+      JETSON_HOST: ${JETSON_HOST}
+      JETSON_USER: ${JETSON_USER}
+      SERVER_IP: ${SERVER_IP}
+      SERVER_PORT: ${SERVER_PORT}
+      JETSON_CALIBRATION_PORT: ${JETSON_CALIBRATION_PORT}
+      CALIBRATION_HEARTBEAT_PORT: ${CALIBRATION_HEARTBEAT_PORT}
+      PYTHONUNBUFFERED: 1
+    env_file: jetson/.env
+    networks:
+      - robotos_network
+    volumes:
+      - jetson_logs:/app/logs
+      - jetson_config:/app/config
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == ${JETSON_HOSTNAME:-jetson-node}
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+
+  # Portainer Agent (runs on all nodes globally)
+  portainer_agent:
+    image: portainer/agent:2.33.6
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+      - /:/host
+    ports:
+      - "9001:9001"
+    networks:
+      - portainer_agent_network
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+networks:
+  robotos_network:
+    driver: overlay
+    driver_opts:
+      com.docker.network.driver.overlay.vxlan_list: 4789
+      com.docker.network.driver.overlay.bind_interface: eth0
+
+  portainer_agent_network:
+    driver: overlay
+    driver_opts:
+      com.docker.network.driver.overlay.vxlan_list: 4789
+
+volumes:
+  registry_data:
+    driver: local
+  server_logs:
+    driver: local
+  jetson_logs:
+    driver: local
+  jetson_config:
+    driver: local
