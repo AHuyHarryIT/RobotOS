@@ -155,13 +155,12 @@ def main():
     SAVE_DEBUG_IMAGES=Config.SAVE_DEBUG_IMAGES
     USE_BLUR = Config.USE_BLUR
     BLUR_KSIZE = Config.BLUR_KSIZE
-    BLUR_SIGMA = Config.BLUR_SIGMA
     SAFE_FLUSH = Config.SAFE_FLUSH
     ACCEPTANCE = Config.ACCEPTANCE
+    CALIB_RANGE = 5 # Fix latter
     STOP_HOLD_FRAMES = Config.STOP_HOLD_FRAMES
     SEND_COMMANDS = Config.SEND_COMMANDS
     COMMAND_COOLDOWN = Config.COMMAND_COOLDOWN
-    MOVEMENT_DURATION = Config.MOVEMENT_DURATION
     MOVEMENT_DURATION_TURN = Config.MOVEMENT_DURATION_TURN
     ILLUM_NORMALIZATION=Config.ILLUM_NORMALIZATION
     DEBUG_STATIC=Config.DEBUG_STATIC
@@ -283,8 +282,9 @@ def main():
         )
         listener_thread.start()
     
-    turning=False
     stop_detected=False
+    calibration=False
+    cond='pass'
     bbox=None
 
     print("\n" + "="*50)
@@ -294,50 +294,6 @@ def main():
     
     try:
         while True:
-            # -------- PERIODIC ENV RELOAD --------
-            # now = time.time()
-            # if now - last_env_reload > ENV_RELOAD_INTERVAL:
-            #     cfg = reload_all_env(DOTENV_PATH)
-
-            #     USE_BLUR = cfg["USE_BLUR"]
-            #     BLUR_KSIZE = cfg["BLUR_KSIZE"]
-            #     BLUR_SIGMA = cfg["BLUR_SIGMA"]
-            #     SAFE_FLUSH = cfg["SAFE_FLUSH"]
-            #     ACCEPTANCE = cfg["ACCEPTANCE"]
-            #     STOP_HOLD_FRAMES = cfg["STOP_HOLD_FRAMES"]
-
-            #     SEND_COMMANDS = cfg["SEND_COMMANDS"]
-            #     COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
-            #     MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
-            #     MOVEMENT_DURATION_TURN=cfg["MOVEMENT_DURATION_TURN"]
-
-            #     DEBUG_STATIC=cfg['DEBUG_STATIC']
-            #     THR_MODE=cfg['THR_MODE']
-            #     THR_L=cfg['THR_L']
-            #     THR_OFFSET=cfg['THR_OFFSET']
-            #     MIN_AREA=cfg['MIN_AREA']
-            #     MIN_THICK=cfg['MIN_THICK']
-            #     ASPECT_MAX=cfg['ASPECT_MAX']
-            #     LINE_AR_REJECT=cfg['LINE_AR_REJECT']
-            #     LINE_FILL_MAX=cfg['LINE_FILL_MAX']
-            #     AREA_PCT=cfg['AREA_PCT']
-            #     sp = StaticParams(DEBUG_STATIC=cfg['DEBUG_STATIC'],
-            #                     THR_MODE=cfg['THR_MODE'],
-            #                     THR_L=cfg['THR_L'],
-            #                     THR_OFFSET=cfg['THR_OFFSET'],
-            #                     MIN_AREA=cfg['MIN_AREA'],
-            #                     MIN_THICK=cfg['MIN_THICK'],
-            #                     ASPECT_MAX=cfg['ASPECT_MAX'],
-            #                     LINE_AR_REJECT=cfg['LINE_AR_REJECT'],
-            #                     LINE_FILL_MAX=cfg['LINE_FILL_MAX'],
-            #                     AREA_PCT=cfg['AREA_PCT'])
-            #     print(f'[DEBUG] SHOW WINDOWS {SHOW_DEBUG_WINDOWS}')
-            #     throttler.cooldown = COMMAND_COOLDOWN
-
-            #     print(f"[ENV RELOAD] STOP_HOLD_FRAMES={STOP_HOLD_FRAMES}, "
-            #         f"ACCEPTANCE={ACCEPTANCE}, BLUR={USE_BLUR}")
-
-            #     last_env_reload = now
 
             if not SHOW_DEBUG_WINDOWS and stop_event.is_set():
                 print("[INFO] Stop event detected. Exiting loop.")
@@ -362,7 +318,9 @@ def main():
                 frame_gray = cv.medianBlur(frame_gray, BLUR_KSIZE)
 
             start_t = time.time()
-            if ENABLE_STATIC_STOP:
+
+            # Static stop will not be performed during calibration
+            if ENABLE_STATIC_STOP and not calibration:
                 stop_detected, bbox, dbg = static_stop_detect(frame_color, roi_mask, danger_mask, sp)
             elapsed_ms = (time.time() - start_t) * 1000
 
@@ -388,8 +346,8 @@ def main():
 
             if hold_active:
                 # STOP detected and holding
-                cond = 'STOP'
-                command_to_send = "stop"
+                cond = 'stop'
+                command_to_send = cond
                 current_duration = 0.0  # Stop is immediate
 
                 print(f'[FRAME {frame_id}] STOP DETECTED! (hold: {hold_remaining})')
@@ -403,31 +361,29 @@ def main():
                 if angle_est is not None:
                     angle_deg = np.rad2deg(angle_est)
                     
-                    if angle_est < np.pi/2 - np.deg2rad(ACCEPTANCE):
-                        cond = 'LEFT'
-                        command_to_send = f"left {MOVEMENT_DURATION_TURN}"
-                        current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
-                        turning=True
-
-                    elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
-                        cond = 'RIGHT'
-                        command_to_send = f"right {MOVEMENT_DURATION_TURN}"
-                        current_duration = MOVEMENT_DURATION_TURN  # Set turn duration
-                        turning=True
-
+                    # Initialize calib condition
+                    if not calibration:
+                        if (angle_est < np.pi/2 - np.deg2rad(CALIB_RANGE)) or (angle_est > np.pi/2 + np.deg2rad(CALIB_RANGE)):
+                            calibration=True
+                            cond='stop'
+                    # Determine turn command    
                     else:
-                        if turning:
-                            # command_to_send = "stop"
-                            current_duration = 0.0
-                            turning=False
+                        if angle_est < np.pi/2 - np.deg2rad(ACCEPTANCE):
+                            cond = 'left'
+                        elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
+                            cond = 'right'
                         else:
-                            cond = 'FORWARD'
-                            # command_to_send = f"forward {MOVEMENT_DURATION}"
-                            current_duration = MOVEMENT_DURATION  # Set forward duration
-                    
+                            cond = 'pass'
+                            calibration=False
+
                     print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')
                     
                     cv.putText(vis, f"turn: {cond}", (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+                    # Prepare command to send
+                    command_to_send = cond if cond != 'pass' else None
+                    if cond in ['left', 'right']:
+                        command_to_send+=f'_{MOVEMENT_DURATION_TURN}'                    
                     
                     # Draw angle arrow
                     H_vis = H - 10
@@ -440,7 +396,7 @@ def main():
 
             # === SEND COMMAND TO CLIENT ===
             if vision_client and command_to_send:
-                if throttler.should_send(command_to_send, duration=current_duration):
+                if throttler.should_send(command_to_send, duration=current_duration) and command_to_send:
                     result = vision_client.send_command(command_to_send)
                     if result.get("status") != "ok":
                         print(f"[ERROR] Command failed: {result}")
