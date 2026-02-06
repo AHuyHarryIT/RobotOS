@@ -108,7 +108,7 @@ def static_stop_detect(frame_ori, roi_mask, danger_mask, params: StaticParams = 
         }
 
     # Get the defect mask (Calculates Z-scores for Color/Sat/Lightness)
-    nonfloor_mask, debug_mask = profiler.get_defect_mask(frame_ori, roi_mask)
+    nonfloor_mask = profiler.get_defect_mask(frame_ori, roi_mask)
 
     # Only danger band within ROI
     nf_danger = cv.bitwise_and(nonfloor_mask, danger_mask)
