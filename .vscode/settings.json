@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "cp": true,
+        "/^python3 -m py_compile server/web_dashboard\\.py server/command_aggregator\\.py jetson/vision_client\\.py rpi/zmq_server\\.py rpi/motion_controller\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

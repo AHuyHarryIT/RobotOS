@@ -380,10 +380,15 @@ def main():
                     
                     cv.putText(vis, f"turn: {cond}", (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-                    # Prepare command to send
-                    command_to_send = cond if cond != 'pass' else None
+                    # Prepare command to send (hold: prefix for smooth continuous turns)
                     if cond in ['left', 'right']:
-                        command_to_send+=f'_{MOVEMENT_DURATION_TURN}'                    
+                        command_to_send = f'hold:{cond}'
+                    elif cond == 'stop':
+                        command_to_send = 'stop'
+                    elif cond == 'pass':
+                        command_to_send = 'stop'  # explicitly stop held turn
+                    else:
+                        command_to_send = None                    
                     
                     # Draw angle arrow
                     H_vis = H - 10
@@ -395,8 +400,9 @@ def main():
                 cv.putText(vis, "LANE CALIB: OFF", (W-150, H-20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
             # === SEND COMMAND TO CLIENT ===
+            # Only send when command actually changes (hold mode = state-based)
             if vision_client and command_to_send:
-                if throttler.should_send(command_to_send, duration=current_duration) and command_to_send:
+                if throttler.should_send(command_to_send, duration=0.0):
                     result = vision_client.send_command(command_to_send)
                     if result.get("status") != "ok":
                         print(f"[ERROR] Command failed: {result}")

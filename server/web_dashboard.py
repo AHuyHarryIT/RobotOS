@@ -41,6 +41,24 @@ update_event = Event()
 background_update_thread = None
 
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+CAMERA_STREAM_URL = os.getenv("CAMERA_STREAM_URL", "").strip()
+
+if not CAMERA_STREAM_URL:
+    jetson_ip = os.getenv("JETSON_IP", os.getenv("JETSON_HOST", "")).strip()
+    if jetson_ip:
+        CAMERA_STREAM_URL = f"http://{jetson_ip}:8081/stream.mjpg"
+
+
+def normalize_web_command(command: str) -> str:
+    """Normalize web command for smoother directional control."""
+    normalized = (command or "").strip()
+    if not normalized:
+        return normalized
+
+    low = normalized.lower()
+    if low in ("forward", "backward", "left", "right"):
+        return f"hold:{low}"
+    return normalized
 
 
 def periodic_dashboard_update():
@@ -124,7 +142,11 @@ def check_controller_status():
 @app.route('/')
 def index():
     """Render the main dashboard page"""
-    return render_template('index.html', rpi_host=RPI_IP)
+    return render_template(
+        'index.html',
+        rpi_host=RPI_IP,
+        camera_stream_url=CAMERA_STREAM_URL
+    )
 
 
 @app.route('/api/stats')
@@ -217,7 +239,8 @@ def health_check():
             'connected': controller_connected,
             'name': controller_name
         },
-        'rpi_connected': rpi_connected
+        'rpi_connected': rpi_connected,
+        'camera_stream_url': CAMERA_STREAM_URL
     })
 
 
@@ -242,7 +265,7 @@ def control():
     """
     try:
         data = request.get_json()
-        command = data.get('command', '').strip()
+        command = normalize_web_command(data.get('command', ''))
         
         if not command:
             return jsonify({'status': 'error', 'message': 'No command provided'}), 400

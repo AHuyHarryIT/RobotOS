@@ -15,7 +15,7 @@ Author: Auto-Bot Team
 import time
 import pygame
 
-from config import DUR_FORWARD, DUR_BACKWARD, DUR_TURN, SEND_COOLDOWN, REPEAT_HOLD_INTERVAL
+from config import SEND_COOLDOWN
 from zmq_client import send_command, get_heartbeat_age
 from command_aggregator import get_aggregator, CommandSource, CommandPriority
 
@@ -24,12 +24,12 @@ def map_hat_to_cmd(hat_x: int, hat_y: int):
     """
     Map D-pad (hat) position to movement command.
     
-    D-pad mapping:
-      (0,  1) -> forward
-      (0, -1) -> backward
-      (-1, 0) -> left
-      (1,  0) -> right
-      (0,  0) -> stop
+    Uses HOLD mode for continuous smooth movement:
+      (0,  1) -> hold:forward  (continuous until released)
+      (0, -1) -> hold:backward
+      (-1, 0) -> hold:left
+      (1,  0) -> hold:right
+      (0,  0) -> stop          (release = stop)
     
     Args:
         hat_x: Horizontal position (-1, 0, 1)
@@ -39,13 +39,13 @@ def map_hat_to_cmd(hat_x: int, hat_y: int):
         Command string or None if no mapping
     """
     if (hat_x, hat_y) == (0, 1):
-        return f"forward {DUR_FORWARD}"
+        return "hold:forward"
     elif (hat_x, hat_y) == (0, -1):
-        return f"backward {DUR_BACKWARD}"
+        return "hold:backward"
     elif (hat_x, hat_y) == (-1, 0):
-        return f"left {DUR_TURN}"
+        return "hold:left"
     elif (hat_x, hat_y) == (1, 0):
-        return f"right {DUR_TURN}"
+        return "hold:right"
     elif (hat_x, hat_y) == (0, 0):
         return "stop"
     else:
@@ -128,13 +128,12 @@ def controller_loop(sock):
         time.sleep(1.0)
 
     last_hat = (0, 0)
-    last_hat_send_time = 0.0
     last_send_time = 0.0
     last_buttons = {}
     controller_connected = True
 
-    print("\n===== CONTROLLER MODE =====")
-    print("D-pad: movement (hold for continuous)")
+    print("\n===== CONTROLLER MODE (SMOOTH HOLD) =====")
+    print("D-pad: movement (hold = continuous, release = stop)")
     print("A: unlock | B: lock | X: STOP | Y: demo sequence")
     print("Ctrl+C to return to menu.\n")
 
@@ -181,7 +180,9 @@ def controller_loop(sock):
                 hat_x, hat_y = 0, 0
 
             if (hat_x, hat_y) != last_hat:
-                # D-pad position changed
+                # D-pad position changed → send ONE command
+                # Hold mode: robot keeps moving until D-pad released (stop)
+                # No more hold-to-repeat needed!
                 last_hat = (hat_x, hat_y)
                 cmd = map_hat_to_cmd(hat_x, hat_y)
                 if cmd and (now - last_send_time) >= SEND_COOLDOWN:
@@ -199,29 +200,7 @@ def controller_loop(sock):
                         except:
                             pass
                         last_send_time = now
-                        last_hat_send_time = now
-            else:
-                # D-pad held in same position -> repeat command
-                if (hat_x, hat_y) != (0, 0):
-                    # Only repeat if D-pad is not neutral
-                    if (now - last_hat_send_time) >= REPEAT_HOLD_INTERVAL:
-                        cmd = map_hat_to_cmd(hat_x, hat_y)
-                        if cmd and (now - last_send_time) >= SEND_COOLDOWN:
-                            # Process through aggregator
-                            success, processed_cmd, msg = aggregator.process_command(
-                                command=cmd,
-                                source=CommandSource.CONTROLLER,
-                                priority=CommandPriority.NORMAL
-                            )
-                            if success and processed_cmd:
-                                send_command(sock, processed_cmd)
-                                try:
-                                    from web_dashboard import send_dashboard_update
-                                    send_dashboard_update()
-                                except:
-                                    pass
-                                last_send_time = now
-                                last_hat_send_time = now
+            # Hold mode: no repeat needed — RPi holds state until changed
 
             # --- BUTTONS (A, B, X, Y) ---
             num_buttons = joystick.get_numbuttons()

@@ -38,11 +38,11 @@ class VisionClient:
         """Connect to miniPC command server."""
         try:
             self.sock = self.ctx.socket(zmq.REQ)
-            self.sock.connect(CLIENT_ADDR)
+            self.sock.connect(SERVER_ADDR)
             self.sock.setsockopt(zmq.RCVTIMEO, 5000)  # 5s timeout
             self.sock.setsockopt(zmq.SNDTIMEO, 5000)
             self.connected = True
-            print(f"[VISION] Connected to client at {CLIENT_ADDR}")
+            print(f"[VISION] Connected to client at {SERVER_ADDR}")
         except Exception as e:
             print(f"[VISION] Connection error: {e}")
             self.connected = False

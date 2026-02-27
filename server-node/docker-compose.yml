@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:latest
+    container_name: mqtt-broker
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+    networks:
+      - mqtt-network
+
+  # Node.js Broker (alternative option)
+  # mqtt-broker-node:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.broker
+  #   container_name: mqtt-broker-node
+  #   ports:
+  #     - "1883:1883"
+  #   environment:
+  #     - NODE_ENV=production
+  #   restart: unless-stopped
+  #   networks:
+  #     - mqtt-network
+
+networks:
+  mqtt-network:
+    driver: bridge
+
+volumes:
+  mosquitto_data:
+  mosquitto_logs:
