@@ -359,26 +359,42 @@ def main():
                 angle_est, angle_log = calib.update(frame)
                 
                 if angle_est is not None:
+                    # angle_est is the centerline in radians.
+                    # np.pi/2 (1.57 rad) is perfectly straight ahead (vertical in image)
                     angle_deg = np.rad2deg(angle_est)
                     
+                    # Calculate deviation from straight (90 degrees)
+                    angle_error = angle_deg - 90.0
+                    
+                    # Log the centerline tracking
+                    if angle_log and SHOW_DEBUG_WINDOWS:
+                        cv.putText(vis, angle_log, (10, H-40), cv.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+
                     # Initialize calib condition
                     if not calibration:
-                        if (angle_est < np.pi/2 - np.deg2rad(CALIB_RANGE)) or (angle_est > np.pi/2 + np.deg2rad(CALIB_RANGE)):
-                            calibration=True
-                            cond='stop'
+                        # If the absolute error is > 10 degrees, trigger correction
+                        if abs(angle_error) > 10.0:
+                            calibration = True
+                            cond = 'stop' # Stop momentarily before turning (optional, based on old logic)
+                            print(f'[FRAME {frame_id}] Deviation {angle_error:.1f}° > 10°! Triggering Correction.')
                     # Determine turn command    
                     else:
-                        if angle_est < np.pi/2 - np.deg2rad(ACCEPTANCE):
+                        # Continue turning until error is within ACCEPTANCE margin
+                        if angle_error < -ACCEPTANCE: # e.g. -5 degrees -> turn left
                             cond = 'left'
-                        elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
+                        elif angle_error > ACCEPTANCE:  # e.g. +5 degrees -> turn right
                             cond = 'right'
                         else:
+                            # We are back within the acceptable margin
                             cond = 'pass'
-                            calibration=False
+                            calibration = False
+                            print(f'[FRAME {frame_id}] Re-aligned (Error: {angle_error:.1f}°). Resuming.')
 
-                    print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')
+                    if calibration:
+                        print(f'[FRAME {frame_id}] Turn: {cond} (Error: {angle_error:.1f}°)')
                     
                     cv.putText(vis, f"turn: {cond}", (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv.putText(vis, f"err: {angle_error:.1f}*", (10, 80), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
                     # Prepare command to send (hold: prefix for smooth continuous turns)
                     if cond in ['left', 'right']:
