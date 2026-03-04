@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   jetson-vision:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: docker.io/autobot/jetson-vision:latest
     container_name: autobot-jetson-vision
     command: ["python3", "calibration_main.py"]
     
@@ -29,9 +27,7 @@ services:
     
     # Mount config files
     volumes:
-      - ./config:/app/jetson/config:rw
-      - ./floor_profile.json:/app/jetson/floor_profile.json:rw
-      - ./roi_points.txt:/app/jetson/roi_points.txt:rw
+      - ./:/app/jetson:rw
       - /app/logs:/app/logs:rw
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro

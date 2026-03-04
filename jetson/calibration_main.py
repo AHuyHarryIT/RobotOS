@@ -326,7 +326,7 @@ def main():
     print("Press 'q' in console or Ctrl+C to stop\n")
     
     # Start MJPEG Stream
-    print("[INFO] Starting MJPEG debug stream on http://0.0.0.0:5005")
+    print("[INFO] Starting MJPEG debug stream on http://192.168.10.210:5005")
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
