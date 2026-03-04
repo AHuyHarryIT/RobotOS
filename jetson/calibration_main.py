@@ -26,6 +26,39 @@ import argparse
 from dotenv import load_dotenv
 from config import Config, reload_all_env
 
+from flask import Flask, Response
+
+# Flask MJPEG Stream globals
+stream_app = Flask(__name__)
+global_frame = None
+frame_lock = threading.Lock()
+
+def generate_frames():
+    global global_frame
+    while True:
+        with frame_lock:
+            if global_frame is None:
+                frame_to_yield = None
+            else:
+                frame_to_yield = global_frame.copy()
+        
+        if frame_to_yield is None:
+            time.sleep(0.1)
+            continue
+            
+        ret, buffer = cv.imencode('.jpg', frame_to_yield)
+        if not ret:
+            continue
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+@stream_app.route('/')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+def run_flask():
+    stream_app.run(host='0.0.0.0', port=5005, debug=False, use_reloader=False)
 
 # Import from AUTO_CAR_V2
 PARENT_ENV= os.path.dirname(__file__)
@@ -292,6 +325,11 @@ def main():
     print("="*50)
     print("Press 'q' in console or Ctrl+C to stop\n")
     
+    # Start MJPEG Stream
+    print("[INFO] Starting MJPEG debug stream on http://0.0.0.0:5005")
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
     try:
         while True:
 
@@ -375,23 +413,28 @@ def main():
                         # If the absolute error is > 10 degrees, trigger correction
                         if abs(angle_error) > 10.0:
                             calibration = True
-                            cond = 'stop' # Stop momentarily before turning (optional, based on old logic)
-                            print(f'[FRAME {frame_id}] Deviation {angle_error:.1f}° > 10°! Triggering Correction.')
+                            cond = 'stop' # Stop momentarily before turning
+                            print(f'[FRAME {frame_id}] Deviation {angle_error:.1f}o > 10o! Triggering Correction.')
+                        else:
+                            cond = 'forward'
                     # Determine turn command    
                     else:
-                        # Continue turning until error is within ACCEPTANCE margin
-                        if angle_error < -ACCEPTANCE: # e.g. -5 degrees -> turn left
+                        # Continue turning until error is within 5 degrees
+                        if angle_error < -5.0:
                             cond = 'left'
-                        elif angle_error > ACCEPTANCE:  # e.g. +5 degrees -> turn right
+                        elif angle_error > 5.0:
                             cond = 'right'
                         else:
                             # We are back within the acceptable margin
                             cond = 'pass'
                             calibration = False
-                            print(f'[FRAME {frame_id}] Re-aligned (Error: {angle_error:.1f}°). Resuming.')
+                            print(f'[FRAME {frame_id}] Re-aligned (Error: {angle_error:.1f}o). Resuming.')
 
                     if calibration:
-                        print(f'[FRAME {frame_id}] Turn: {cond} (Error: {angle_error:.1f}°)')
+                        print(f'[FRAME {frame_id}] Turn: {cond} (Error: {angle_error:.1f}o)')
+                    elif cond == 'forward':
+                        # Optional: limit print spam if it goes too fast, but log helps visualization
+                        pass
                     
                     cv.putText(vis, f"turn: {cond}", (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                     cv.putText(vis, f"err: {angle_error:.1f}*", (10, 80), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
@@ -399,12 +442,14 @@ def main():
                     # Prepare command to send (hold: prefix for smooth continuous turns)
                     if cond in ['left', 'right']:
                         command_to_send = f'hold:{cond}'
+                    elif cond == 'forward':
+                        command_to_send = 'forward'
                     elif cond == 'stop':
                         command_to_send = 'stop'
                     elif cond == 'pass':
                         command_to_send = 'stop'  # explicitly stop held turn
                     else:
-                        command_to_send = None                    
+                        command_to_send = None
                     
                     # Draw angle arrow
                     H_vis = H - 10
@@ -418,7 +463,8 @@ def main():
             # === SEND COMMAND TO CLIENT ===
             # Only send when command actually changes (hold mode = state-based)
             if vision_client and command_to_send:
-                if throttler.should_send(command_to_send, duration=0.0):
+                duration = MOVEMENT_DURATION_TURN if 'hold' in command_to_send else 0.0
+                if throttler.should_send(command_to_send, duration=duration):
                     result = vision_client.send_command(command_to_send)
                     if result.get("status") != "ok":
                         print(f"[ERROR] Command failed: {result}")
@@ -437,6 +483,10 @@ def main():
             nd_s = cv.resize(nd_color, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             combined = np.hstack((vis_s, nf_s, nd_s))
             writer.write(combined)
+
+            global global_frame
+            with frame_lock:
+                global_frame = combined
 
             # Display windows
             if SHOW_DEBUG_WINDOWS:

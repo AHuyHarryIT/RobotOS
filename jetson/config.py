@@ -11,10 +11,10 @@ def get_float(key, default):
     return float(os.getenv(key, default))
 
 def get_bool(key, default=False):
-    return os.getenv(key, str(default)).lower() in ("1", "true", "yes")
+    return os.getenv(key, str(default)).strip().lower() in ("1", "true", "yes")
 
 def get_text(key, default=''):
-    return str(os.getenv(key, default)).lower()
+    return str(os.getenv(key, default)).strip().lower()
 
 
 class Config:

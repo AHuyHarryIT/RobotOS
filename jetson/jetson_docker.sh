@@ -41,8 +41,9 @@ JETSON_DIR="${SCRIPT_DIR}"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Environment defaults
-JETSON_HOST="${JETSON_HOST:-jetson-local.local}"
-JETSON_USER="${JETSON_USER:-ubuntu}"
+JETSON_HOST="${JETSON_HOST:-192.168.10.210}"
+JETSON_USER="${JETSON_USER:-root}"
+JETSON_PASSWORD="${JETSON_PASSWORD:-1}"
 JETSON_PORT="${JETSON_PORT:-22}"
 DOCKER_REGISTRY="${DOCKER_REGISTRY:-autobot}"
 BUILD_VERSION="${BUILD_VERSION:-latest}"
@@ -74,12 +75,21 @@ log_error() {
 
 # Helper: SSH to Jetson
 jetson_ssh() {
-    ssh -p "${JETSON_PORT}" "${JETSON_USER}@${JETSON_HOST}" "$@"
+    if [ -n "$JETSON_PASSWORD" ]; then
+        sshpass -p "${JETSON_PASSWORD}" ssh -p "${JETSON_PORT}" "${JETSON_USER}@${JETSON_HOST}" "$@"
+    else
+        ssh -p "${JETSON_PORT}" "${JETSON_USER}@${JETSON_HOST}" "$@"
+    fi
 }
 
 # Helper: SCP to Jetson
 jetson_scp() {
-    scp -P "${JETSON_PORT}" "$@"
+    if [ -n "$JETSON_PASSWORD" ]; then
+        sshpass -p "${JETSON_PASSWORD}" scp -P "${JETSON_PORT}" "$@"
+    else
+        echo $@
+        scp -P "${JETSON_PORT}" "$@"
+    fi
 }
 
 ################################################################################
@@ -135,7 +145,7 @@ build_ci_image() {
 deploy_to_jetson() {
     local env_flag=""
     [[ "$1" == "--prod" ]] && env_flag=".prod"
-    
+    apt install sshpass -y  
     log_info "Deploying Jetson Vision to: ${JETSON_HOST}"
     log_info "Environment: ${DEPLOYMENT_ENV}"
     
@@ -195,18 +205,17 @@ deploy_to_jetson() {
     
     # Stop existing container
     log_info "Stopping existing containers..."
-    jetson_ssh "cd /app/autobot-jetson && \
-               docker-compose down || true"
+    jetson_ssh "docker rm -f autobot-jetson-vision || (cd /app/autobot-jetson && docker compose down) || true"
     
     # Deploy new container
     log_info "Starting new container..."
     jetson_ssh "cd /app/autobot-jetson && \
-               docker-compose up -d"
+               docker compose up -d"
     
     # Verify deployment
     sleep 5
     log_info "Verifying deployment..."
-    jetson_ssh "docker-compose -f /app/autobot-jetson/docker-compose.yml ps"
+    jetson_ssh "docker compose -f /app/autobot-jetson/docker-compose.yml ps"
     
     log_success "Jetson deployment complete!"
 }

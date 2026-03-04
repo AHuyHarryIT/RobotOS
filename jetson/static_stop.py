@@ -63,7 +63,7 @@ class StaticParams:
 def _shape_metrics(w, h, area):
     box_area = max(1, w * h)
     fill  = area / float(box_area)                 # pixels / bbox area
-    elong = max(w / max(1, h), h / max(1, w))      # ≥1.0; big → elongated
+    elong = max(w / max(1, h), h / max(1, w))      # >=1.0; big -> elongated
     return fill, elong
 
 def _passes_shape_filters(w, h, area, p: StaticParams):
@@ -85,7 +85,7 @@ def _passes_shape_filters(w, h, area, p: StaticParams):
     if p.DEBUG:
         # w,h, fill, elong + verdict
         print(f"[Static] area={area:5d} w={w:3d} h={h:3d} "
-              f"fill={fill:.3f} elong={elong:.2f} → {reason}")
+              f"fill={fill:.3f} elong={elong:.2f} -> {reason}")
 
     return passed,fill,elong
 

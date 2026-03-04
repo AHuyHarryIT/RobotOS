@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: autobot-jetson-vision
+    command: ["python3", "calibration_main.py"]
     
     environment:
       # Jetson config - use host network to reach server
@@ -14,10 +15,17 @@ services:
       
       # Logging
       PYTHONUNBUFFERED: 1
+      PYTHONIOENCODING: utf-8
+      LANG: C.UTF-8
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     
     # Use host network to reach server on same LAN
     network_mode: host
+    
+    # Grant camera access
+    privileged: true
+    devices:
+      - /dev/video0:/dev/video0
     
     # Mount config files
     volumes:

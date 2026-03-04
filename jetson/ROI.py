@@ -90,6 +90,19 @@ class ROI:
         """
         # --- choose camera & load/create option ---
 
+        # AUTO-LOAD IN HEADLESS MODE
+        from config import Config
+        if not Config.SHOW_DEBUG_WINDOWS:
+            print("[ROI] Headless mode detected (SHOW_DEBUG_WINDOWS=0). Auto-loading points.")
+            self.load_points()
+            if self.roi_created and len(self.corner_points) == 3:
+                self.corner_points = [[int(x), int(y)] for x, y in self.corner_points]
+                print(f"[ROI] Using saved points: {self.corner_points}")
+                return True
+            else:
+                print("[ROI] No valid saved ROI, and cannot run interactive mode headlessly.")
+                return False
+
 
         choice = input("Use saved corner points? (y/n): ").strip().lower()
 
