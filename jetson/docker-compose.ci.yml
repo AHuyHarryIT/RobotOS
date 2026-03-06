@@ -1,0 +1,206 @@
+version: '3.8'
+
+# CI/CD Testing Docker Compose for Jetson
+# Used for automated testing, linting, and validation
+
+services:
+  # Test runner service
+  jetson-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+      args:
+        BUILD_VERSION: test-${BUILD_NUMBER:-local}
+    
+    container_name: autobot-jetson-test-${BUILD_NUMBER:-local}
+    
+    environment:
+      # Test configuration
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: DEBUG
+      PYTHONDONTWRITEBYTECODE: 1
+      
+      # Coverage reporting
+      COVERAGE_FILE: .coverage
+      COVERAGE_REPORT: /app/test-results/coverage.html
+      
+      # Test markers
+      TEST_ENV: ci
+      BUILD_NUMBER: ${BUILD_NUMBER:-local}
+    
+    # Test isolation - no network access by default
+    networks:
+      - test-network
+    
+    volumes:
+      # Source code (read-only)
+      - .:/app/jetson:ro
+      
+      # Test results (writable)
+      - test-results:/app/test-results:rw
+      - test-coverage:/app/.coverage:rw
+      
+      # Timezone (read-only)
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    # Test execution limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # No restart on test failure (we want to see the result)
+    restart: "no"
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # Linting and code quality service
+  jetson-lint:
+    image: python:3.11-slim
+    
+    container_name: autobot-jetson-lint-${BUILD_NUMBER:-local}
+    
+    working_dir: /app/jetson
+    
+    command: >
+      bash -c "
+        pip install --no-cache-dir pylint flake8 black isort &&
+        echo '=== Running Black Format Check ===' &&
+        black --check . || echo 'Format issues found' &&
+        echo '=== Running isort Import Check ===' &&
+        isort --check-only . || echo 'Import sort issues found' &&
+        echo '=== Running Flake8 Linter ===' &&
+        flake8 . --max-line-length=100 --count --statistics &&
+        echo '=== Running Pylint ===' &&
+        pylint *.py --disable=all --enable=E,F --exit-zero || true &&
+        echo 'Lint checks completed'
+      "
+    
+    volumes:
+      - .:/app/jetson:ro
+      - lint-results:/app/lint-results:rw
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    networks:
+      - test-network
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    
+    restart: "no"
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Security scanning service
+  jetson-security:
+    image: python:3.11-slim
+    
+    container_name: autobot-jetson-security-${BUILD_NUMBER:-local}
+    
+    working_dir: /app/jetson
+    
+    command: >
+      bash -c "
+        pip install --no-cache-dir bandit safety &&
+        echo '=== Running Bandit Security Scan ===' &&
+        bandit -r . -f json -o /app/security-results/bandit.json || true &&
+        echo '=== Running Safety Dependency Check ===' &&
+        safety check --json > /app/security-results/safety.json || true &&
+        echo 'Security checks completed'
+      "
+    
+    volumes:
+      - .:/app/jetson:ro
+      - security-results:/app/security-results:rw
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    networks:
+      - test-network
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    
+    restart: "no"
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Image validation service
+  jetson-validate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: autobot-jetson-validate-${BUILD_NUMBER:-local}
+    
+    environment:
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: INFO
+    
+    # Just validate that image builds and runs
+    command: python3 -c "
+      import zmq
+      import cv2
+      import numpy
+      from dotenv import load_dotenv
+      print('✓ All dependencies imported successfully')
+      print('✓ Docker image validation passed')"
+    
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    networks:
+      - test-network
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    
+    restart: "no"
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  test-network:
+    driver: bridge
+
+volumes:
+  test-results:
+    driver: local
+  test-coverage:
+    driver: local
+  lint-results:
+    driver: local
+  security-results:
+    driver: local

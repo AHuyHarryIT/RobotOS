@@ -1,0 +1,123 @@
+version: '3.8'
+
+# Production Docker Compose for Jetson Vision System
+# Optimized for real autonomous operation with monitoring
+
+services:
+  jetson-vision:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_VERSION: ${BUILD_VERSION:-latest}
+    
+    image: autobot/jetson-vision:${BUILD_VERSION:-latest}
+    container_name: autobot-jetson-vision-${BUILD_VERSION:-prod}
+    
+    environment:
+      # Jetson config
+      JETSON_SERVER_IP: ${JETSON_SERVER_IP}
+      SERVER_CMD_PORT: ${SERVER_CMD_PORT:-5557}
+      
+      # Calibration config
+      JETSON_CALIBRATION_PORT: ${JETSON_CALIBRATION_PORT:-5558}
+      CALIBRATION_HEARTBEAT_PORT: ${CALIBRATION_HEARTBEAT_PORT:-5559}
+      CALIBRATION_TIMEOUT: ${CALIBRATION_TIMEOUT:-30.0}
+      
+      # Vision config
+      ROI_FILE: ${ROI_FILE:-/app/jetson/config/roi_points.txt}
+      FLOOR_PROFILE: ${FLOOR_PROFILE:-/app/jetson/config/floor_profile.json}
+      MIN_CONFIDENCE: ${MIN_CONFIDENCE:-0.5}
+      
+      # Logging
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_DIR: /app/logs
+      
+      # Performance tuning
+      DETECTION_FPS: ${DETECTION_FPS:-10}
+      CALIBRATION_INTERVAL: ${CALIBRATION_INTERVAL:-1.0}
+    
+    # Production: host network for direct LAN access
+    network_mode: host
+    
+    volumes:
+      # Config files (read-only in production)
+      - ./config:/app/jetson/config:ro
+      - ./floor_profile.json:/app/jetson/floor_profile.json:ro
+      - ./roi_points.txt:/app/jetson/roi_points.txt:ro
+      
+      # Logs volume (writable)
+      - jetson-logs:/app/logs
+      
+      # Timezone/localtime (read-only)
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    # Production: strict resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1.5'
+          memory: 1.5G
+    
+    # Production: always restart on failure
+    restart: on-failure:5
+    
+    # Production: comprehensive logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "10"
+        labels: "service=jetson-vision,env=production"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import zmq; ctx=zmq.Context(); sock=ctx.socket(zmq.REQ); sock.setsockopt(zmq.LINGER, 0); sock.connect('tcp://localhost:5557'); sock.send(b'ping'); print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Labels for monitoring/orchestration
+    labels:
+      - "service=jetson-vision"
+      - "environment=production"
+      - "version=${BUILD_VERSION:-latest}"
+      - "managed=autobot-server"
+
+  # Optional: Prometheus exporter for metrics
+  jetson-metrics:
+    image: prom/node-exporter:latest
+    container_name: autobot-jetson-metrics
+    
+    command:
+      - "--path.rootfs=/host"
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    
+    volumes:
+      - /:/host:ro,rslave
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    
+    network_mode: host
+    
+    restart: unless-stopped
+    
+    labels:
+      - "service=jetson-metrics"
+      - "component=monitoring"
+
+volumes:
+  jetson-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/autobot/jetson

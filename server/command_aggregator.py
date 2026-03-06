@@ -76,6 +76,8 @@ class CommandAggregator:
             "forward", "backward", "left", "right", 
             "stop", "lock", "unlock", "sleep"
         }
+
+        self.continuous_commands = {"forward", "backward", "left", "right"}
         
         logger.info("Command Aggregator initialized")
     
@@ -143,12 +145,19 @@ class CommandAggregator:
         if not command:
             return False, ""
         
-        # Normalize: strip whitespace and convert to lowercase
+        # Normalize: strip whitespace
         normalized = command.strip()
         
         # Handle sequence commands (keep as-is)
-        if normalized.startswith("seq "):
+        if normalized.lower().startswith("seq "):
             return True, normalized
+        
+        # Handle hold: prefix for continuous mode (e.g., "hold:forward")
+        if normalized.lower().startswith("hold:"):
+            target = normalized[5:].strip().lower()
+            if target in self.allowed_commands and target not in ("stop", "sleep"):
+                return True, normalized
+            return False, ""
         
         # Parse single command
         parts = normalized.split()
@@ -158,16 +167,20 @@ class CommandAggregator:
         base_cmd = parts[0].lower()
         
         # Check if base command is allowed
-        if base_cmd not in self.allowed_commands:
-            # Check for colon format (e.g., "left:1.5")
-            if ":" in base_cmd:
-                cmd_name = base_cmd.split(":")[0]
-                if cmd_name in self.allowed_commands:
-                    return True, normalized
-            return False, ""
+        if base_cmd in self.allowed_commands:
+            # Normalize single-word directional commands to HOLD mode
+            # so every source (web/jetson/manual/external) gets smoother motion.
+            if len(parts) == 1 and base_cmd in self.continuous_commands:
+                return True, f"hold:{base_cmd}"
+            return True, normalized
         
-        # Command is valid
-        return True, normalized
+        # Check for colon format (e.g., "left:1.5")
+        if ":" in base_cmd:
+            cmd_name = base_cmd.split(":")[0]
+            if cmd_name in self.allowed_commands:
+                return True, normalized
+        
+        return False, ""
     
     def _add_to_history(self, raw_cmd: str, source: str, priority: int, processed_cmd: str):
         """

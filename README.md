@@ -35,101 +35,110 @@ A distributed robotics control system for an RC car with **three-tier architectu
 ```
 RobotOS/
 ├── server/              # miniPC server (Brain)
-│   ├── main.py                # Main entry point
-│   ├── command_aggregator.py  # Central command processing hub
-│   ├── command_server.py      # Receives from Jetson
-│   ├── controller_mode.py     # Xbox gamepad control
-│   ├── seq_mode.py            # Manual command mode
-│   ├── zmq_client.py          # RPi communication
-│   └── config.py              # Configuration
+│   ├── main.py                      # Main entry point
+│   ├── command_aggregator.py        # Central command processing hub
+│   ├── command_server.py            # Receives from Jetson
+│   ├── calibration_coordinator.py   # Calibration state machine
+│   ├── sequence_executor.py         # Enhanced sequence execution
+│   ├── controller_mode.py           # Xbox gamepad control
+│   ├── seq_mode.py                  # Manual command mode
+│   ├── zmq_client.py                # RPi communication
+│   ├── web_dashboard.py             # Web UI
+│   ├── config.py                    # Configuration
+│   └── docker-compose*.yml          # Docker orchestration
+│
 ├── rpi/                 # Raspberry Pi server (Executor)
-│   ├── zmq_server.py       # ZMQ server & motion control
-│   ├── gpio_driver.py      # GPIO pin management
-│   ├── parser.py           # Command parsing
-│   └── states.py           # GPIO state definitions
+│   ├── app.py                       # Main entry point
+│   ├── zmq_server.py                # ZMQ server & motion control
+│   ├── gpio_driver.py               # GPIO pin management
+│   ├── parser.py                    # Command parsing
+│   ├── sequencer.py                 # Sequence handling
+│   ├── states.py                    # GPIO state definitions
+│   └── docker-compose*.yml          # Docker orchestration
+│
 ├── jetson/              # Jetson Nano (Vision)
-│   ├── vision_client.py    # Send commands to client
-│   ├── calibration.py      # Camera calibration
-│   └── README.md           # Jetson setup guide
-└── docs/
-    ├── QUICKSTART.md           # Quick start guide
-    ├── ARCHITECTURE.md         # Full architecture docs
-    ├── COMMAND_AGGREGATION.md  # Command aggregation system
-    └── DIAGRAM.md              # System diagrams
+│   ├── vision_client.py             # Standard vision client
+│   ├── vision_client_calibration_example.py
+│   ├── calibrate.py                 # Calibration utilities
+│   ├── config.py                    # Configuration
+│   ├── jetson_docker.sh             # Docker management
+│   └── docker-compose*.yml          # Docker orchestration
+│
+├── docs/                            # Complete documentation
+│   ├── INDEX.md                     # Documentation index
+│   ├── QUICKSTART.md                # 5-minute quick start
+│   ├── ARCHITECTURE.md              # System architecture
+│   ├── DEPLOYMENT.md                # Deployment guide
+│   └── CALIBRATION.md               # Calibration integration
+│
+├── .env                             # Configuration (auto-propagated)
+├── setup_auto_bot.sh                # Initial system setup
+├── auto_update.sh                   # Fast redeployment
+└── README.md                        # This file
 ```
 
 ## 🚀 Quick Start
 
-### 1. Clone and Configure
+See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** for complete setup instructions.
+
+### Quick 5-Minute Setup
 ```bash
-git clone https://github.com/AHuyHarryIT/RobotOS.git
+# 1. Configure environment
 cd RobotOS
-cp .env.example .env
-nano .env  # Set RPI_HOST, CLIENT_IP, etc.
-```
+nano .env  # Set RPI_HOST, CLIENT_IP, JETSON_HOST
 
-### 2. Deploy RPi Server
-```bash
+# 2. Deploy everything
+chmod +x setup_auto_bot.sh
 ./setup_auto_bot.sh
-```
 
-### 3. Start Client (Brain)
-```bash
+# 3. Start server
 cd server/
 python3 main.py
-```
 
-### 4. Setup Jetson (Optional for autonomous mode)
-```bash
-cd jetson/
-cp .env.example .env
-nano .env  # Set CLIENT_IP
-python3 vision_client.py interactive
+# Select mode:
+# 1. Web Dashboard (recommended)
+# 2. Controller Mode (Xbox)
+# 3. Sequence Mode (manual commands)
+# 4. Server Only (Jetson autonomous)
 ```
-
-See [QUICKSTART.md](QUICKSTART.md) for detailed instructions.
 
 ## 🎮 Usage Modes
 
-### 1. Sequence Mode (Manual Testing)
-```bash
-> forward 2
-> right 0.5
-> stop
-> seq forward 1; left 0.3; stop
-```
+The system supports 4 operating modes:
 
-### 2. Controller Mode (Xbox Gamepad)
-- **D-Pad**: Movement control
-- **A**: Unlock
-- **B**: Lock
-- **X**: Stop
-- **Y**: Demo sequence
-
-### 3. Server Mode (Autonomous via Jetson)
-Receives vision-based commands from Jetson:
-```python
-# On Jetson
-from vision_client import VisionClient
-client = VisionClient()
-client.send_command("left 0.3")
-```
-
-### 4. Web Dashboard 🌐
-Real-time monitoring interface accessible via web browser:
-```bash
-# Access dashboard
-http://localhost:5000           # On local machine
-http://<miniPC-IP>:5000         # From other devices
-```
-
-**Dashboard Features:**
-- 📊 Real-time command statistics
-- 🎯 Commands by source (Jetson, Controller, Manual, Sequence)
+### 1. Web Dashboard (Recommended) 🌐
+Real-time monitoring interface:
+- 📊 Command statistics (by source: Jetson, Controller, Manual, Sequence)
 - 📜 Live command history
-- 💓 RPi connection status
+- 💓 RPi connection status monitoring
 - ⏱️ System uptime tracking
-- 🔄 Auto-refresh every 1 second
+- Access at `http://localhost:8080`
+
+### 2. Controller Mode (Xbox)
+Direct gamepad control without calibration:
+- **D-Pad**: Movement (up/down/left/right)
+- **A Button**: Unlock, **B Button**: Lock
+- **X Button**: Stop, **Y Button**: Demo
+- Hold-to-repeat at 150ms intervals
+- Immediate response, no delays
+
+### 3. Sequence Mode (Manual Commands)
+Text-based command entry with full calibration support:
+```bash
+seq> forward 2              # Single command
+seq> seq forward 2; right 1; lock 0.5; stop    # Sequence
+```
+
+**With Calibration Support**:
+- Forward/backward/lock/unlock motions are pausable
+- Jetson can pause forward motion for calibration
+- Turns (left/right) are non-pausable (atomic)
+
+### 4. Server Only (Autonomous)
+Pure Jetson-based autonomous control:
+- No manual input accepted
+- Server only receives Jetson commands
+- Full calibration integration
 
 ## 📡 Network Ports
 
@@ -155,34 +164,35 @@ http://<miniPC-IP>:5000         # From other devices
 
 ## 🏗️ Architecture
 
-The system uses a **3-tier architecture** with centralized command aggregation:
+The system uses a **3-tier distributed architecture** with Docker-based CI/CD managed from miniPC:
 
-1. **Jetson (Vision Layer)**
-   - Processes camera input
-   - Detects lanes, objects
-   - Sends high-level commands (left, right, stop)
-
-2. **Client (Decision Layer)**
-   - **Command Aggregator**: Central hub that validates and processes all commands
-   - Receives from Jetson, Xbox controller, or manual input
-   - Tracks statistics, history, and command sources
-   - Validates commands before forwarding to RPi
-
-3. **RPi (Execution Layer)**
-   - Receives unified commands
-   - Controls GPIO pins safely
-   - Manages motor states
-
-### Command Flow
 ```
-[Jetson]     ──┐
-[Controller] ──┼──> [Aggregator] ──> [Validator] ──> [RPi GPIO] ──> [Motors]
-[Manual]     ──┘         │
-                         ├──> [Statistics]
-                         └──> [History Log]
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│ JETSON (Vision)  │      │  miniPC (Brain)  │      │ RPi (Executor)   │
+│ • Vision proc.   │◀────▶│ • Aggregator     │◀────▶│ • GPIO control   │
+│ • Calibration    │ ZMQ  │ • Coordinator    │ ZMQ  │ • Motor driver   │
+│                  │ 5557 │ • Dashboard      │ 5555 │ • Motion thread  │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+        │                           │                        │
+        └─ Docker Agent    ┌───────┴────────────────────────┘
+          (managed from    │
+           miniPC via      ├─ docker-compose up
+           jetson_docker   ├─ jetson_docker.sh
+           .sh)            └─ auto_update.sh
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) and [COMMAND_AGGREGATION.md](COMMAND_AGGREGATION.md) for complete details.
+**Three-Tier Flow**:
+1. **Jetson** - Processes camera feed, detects objects, sends commands
+2. **miniPC Server** - Central hub aggregating inputs (Jetson, Xbox, Manual), coordinating calibration
+3. **RPi** - Executes GPIO commands, controls motors, sends heartbeat
+
+**Key Principles**:
+- Centralized command aggregation (no competing commands)
+- Thread-safe motion control (single motion thread)
+- Calibration coordination (Jetson can pause motion)
+- Docker deployment from miniPC (centralized management)
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for complete details.
 
 ## 🔌 Hardware
 
@@ -201,53 +211,85 @@ COMMAND_AGGREGATION.md](COMMAND_AGGREGATION.md)** - Command processing system
 
 ## 📚 Documentation
 
-- **[QUICKSTART.md](QUICKSTART.md)** - Get started in 5 minutes
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Complete system design
-- **[DIAGRAM.md](DIAGRAM.md)** - Visual diagrams
-- **[jetson/README.md](jetson/README.md)** - Jetson setup
-- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - What changed
+**Start Here**: [docs/INDEX.md](docs/INDEX.md) - Complete documentation index
+
+### Core Guides
+- **[docs/QUICKSTART.md](docs/QUICKSTART.md)** - 5-minute setup guide
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design and architecture
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Docker deployment workflows
+- **[docs/CALIBRATION.md](docs/CALIBRATION.md)** - Jetson calibration integration
+
+### Key Features Documented
+- ✅ 3-tier distributed architecture
+- ✅ Command aggregation system
+- ✅ Docker CI/CD infrastructure (Jetson management from miniPC)
+- ✅ Calibration pause/resume for vision processing
+- ✅ Web dashboard monitoring
+- ✅ Xbox controller support
+- ✅ Thread-safe motion control
+- ✅ Health monitoring & heartbeat
 
 ## 🐛 Troubleshooting
 
-### Jetson can't connect to client
+### Common Issues
+
+**Jetson can't connect to server**
 ```bash
-ping <CLIENT_IP>
+ping $CLIENT_IP
 sudo ufw allow 5557/tcp
 ```
 
-### Client can't reach RPi
+**Server can't reach RPi**
 ```bash
-ping <RPI_HOST>
-ssh pi@<RPI_HOST> "docker ps"
+ping $RPI_HOST
+ssh pi@$RPI_HOST "docker ps"
 ```
 
-### Car not moving
+**Car doesn't move**
 ```bash
-ssh pi@<RPI_HOST>
+ssh pi@$RPI_HOST
 docker logs auto-bot-rpi
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) → Troubleshooting for more.
+For detailed troubleshooting, see [docs/QUICKSTART.md#-troubleshooting](docs/QUICKSTART.md#-troubleshooting).
 
 ## 🔄 Development
 
-### Quick Redeploy
+### Quick Redeploy After Code Changes
 ```bash
 ./auto_update.sh
+# Pulls latest code, builds Docker images, deploys to all systems
 ```
 
-### Test GPIO Directly
+### Build Jetson Docker Image (from miniPC)
 ```bash
-ssh pi@<RPI_HOST>
+cd jetson/
+./jetson_docker.sh build
+```
+
+### Run CI/CD Pipeline (test, lint, security, validate)
+```bash
+./jetson/jetson_docker.sh ci
+```
+
+### Deploy to Jetson
+```bash
+./jetson/jetson_docker.sh deploy
+```
+
+### Monitor Logs
+```bash
+./jetson/jetson_docker.sh logs --follow
+```
+
+### Test GPIO Directly (on RPi)
+```bash
+ssh pi@$RPI_HOST
 cd auto-bot-rpi
 sudo python3 app.py "forward 1"
 ```
 
-### Add New Command Source
-```python
-from zmq_client import send_command
-send_command(sock, "your_command")
-```
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment workflows.
 
 ## 📝 License
 
@@ -256,6 +298,7 @@ MIT License - See LICENSE file for details
 ## 👥 Contributors
 
 - [AHuyHarryIT](https://github.com/AHuyHarryIT)
+- [NhatNam041206](https://github.com/NhatNam041206)
 
 ## 🙏 Acknowledgments
 
@@ -265,6 +308,6 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Status**: ✅ Production Ready  
-**Last Updated**: December 2025  
+**Status**: Development  
+**Last Updated**: January 2026  
 **Architecture Version**: 3.0 (3-Tier)

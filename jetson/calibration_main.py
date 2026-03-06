@@ -10,8 +10,6 @@ This integrates:
 - Object detection (stop sign detection)
 - Vision client to send commands to miniPC
 
-Usage:
-    python3 calibration_main.py [--config config.json]
 """
 
 import cv2 as cv
@@ -25,9 +23,47 @@ import json
 import pathlib
 from datetime import datetime
 import argparse
+from dotenv import load_dotenv
+from config import Config, reload_all_env
+
+from flask import Flask, Response
+
+# Flask MJPEG Stream globals
+stream_app = Flask(__name__)
+global_frame = None
+frame_lock = threading.Lock()
+
+def generate_frames():
+    global global_frame
+    while True:
+        with frame_lock:
+            if global_frame is None:
+                frame_to_yield = None
+            else:
+                frame_to_yield = global_frame.copy()
+        
+        if frame_to_yield is None:
+            time.sleep(0.1)
+            continue
+            
+        ret, buffer = cv.imencode('.jpg', frame_to_yield)
+        if not ret:
+            continue
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+@stream_app.route('/')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+def run_flask():
+    stream_app.run(host='0.0.0.0', port=5005, debug=False, use_reloader=False)
 
 # Import from AUTO_CAR_V2
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'AUTO_CAR_V2'))
+PARENT_ENV= os.path.dirname(__file__)
+DOTENV_PATH = os.path.join(os.path.dirname(__file__), ".env")
+
 from ROI import ROI
 from helpers import rotate, draw_arrow_by_angle
 from static_stop import static_stop_detect, StaticParams
@@ -36,51 +72,11 @@ from calibrate import Calibrate
 # Import vision client
 from vision_client import VisionClient
 
+# Check whether .env file exist
+# dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+# print("[ENV] loading:", dotenv_path, "exists:", os.path.exists(dotenv_path))
+# print("[ENV] STOP_HOLD_FRAMES =", os.getenv("STOP_HOLD_FRAMES"))
 
-def load_config(path="config.json"):
-    """
-    Load hyperparameters from config.json.
-    If file or keys are missing, fall back to sane defaults.
-    """
-    cfg = {
-        "CAM_DEVICE": 0,
-        "VIDEO_PATH": "",
-        "W": 640,
-        "H": 480,
-        "FPS": 30,
-        "OUT_SCALE": 0.7,
-
-        "SHOW_DEBUG_WINDOWS": False,
-        "USE_BLUR": True,
-        "BLUR_KSIZE": 3,
-        "BLUR_SIGMA": 5,
-        "SAFE_FLUSH": 0,
-
-        "ACCEPTANCE": 5,  # degrees tolerance for going straight
-        "STOP_HOLD_FRAMES": 20,
-        
-        # NEW: Command sending params
-        "SEND_COMMANDS": True,  # Enable/disable sending to client
-        "COMMAND_COOLDOWN": 0.3,  # Min time between commands (seconds)
-        "MOVEMENT_DURATION": 0.05,  # Duration for movement commands
-    }
-
-    p = pathlib.Path(path)
-    if not p.exists():
-        print(f"[WARN] {path} not found. Using default config.")
-        return cfg
-
-    try:
-        with p.open("r", encoding="utf-8") as f:
-            user_cfg = json.load(f)
-        if not isinstance(user_cfg, dict):
-            print("[WARN] config.json does not contain a JSON object. Using defaults.")
-            return cfg
-        cfg.update(user_cfg)
-    except Exception as e:
-        print(f"[WARN] Failed to load {path}: {e}. Using defaults.")
-
-    return cfg
 
 
 def console_stop_listener(stop_event):
@@ -94,7 +90,6 @@ def console_stop_listener(stop_event):
             print("[CTRL] Stop requested via console.")
             stop_event.set()
             break
-
 
 def safe_read(cap, flush=0):
     """Grab and retrieve a COMPLETE frame (avoids partial updates)."""
@@ -138,63 +133,104 @@ def update_hold_state(hold_active, hold_remaining, detected, hold_frames):
 
 
 class CommandThrottler:
-    """Throttle command sending to avoid spamming."""
+    """
+    Throttle command sending to avoid spamming and respect movement duration.
+    Prevents sending new move commands while the car is still physically moving.
+    """
     
-    def __init__(self, cooldown=0.3):
+    def __init__(self, cooldown=0.1):
         self.cooldown = cooldown
         self.last_cmd = None
-        self.last_time = 0
+        self.busy_until = 0  # Timestamp when the current move finishes
         
-    def should_send(self, cmd):
+    def should_send(self, cmd, duration=0.0):
         """Check if we should send this command."""
         now = time.time()
         
-        # Always send STOP immediately
+        # --- PRIORITY: STOP ---
+        # Always send STOP immediately and clear busy status so we can resume quickly
         if cmd == "stop":
             self.last_cmd = cmd
-            self.last_time = now
+            self.busy_until = 0
             return True
         
-        # If same command and within cooldown, skip
-        if cmd == self.last_cmd and (now - self.last_time) < self.cooldown:
+        # --- RULE: BUSY CHECK ---
+        # If the car is still executing the previous command, do not send.
+        if now < self.busy_until:
+            return False
+        
+        # --- RULE: NETWORK HYGIENE ---
+        # Even if not busy, don't spam the exact same command instantly
+        # (Useful if duration is 0 or very short)
+        if cmd == self.last_cmd and (now < self.busy_until + self.cooldown):
             return False
         
         self.last_cmd = cmd
-        self.last_time = now
+        self.busy_until = now + duration
         return True
-
 
 def main():
     parser = argparse.ArgumentParser(description="Jetson Calibration with Vision Client")
     parser.add_argument("--config", default="config.json", help="Path to config file")
     parser.add_argument("--no-send", action="store_true", help="Disable sending commands")
-    args = parser.parse_args()
-    
-    # Load config
-    cfg = load_config(args.config)
-    
-    CAM_DEVICE = cfg["CAM_DEVICE"]
-    VIDEO_PATH = cfg["VIDEO_PATH"]
-    W = cfg["W"]
-    H = cfg["H"]
-    FPS = cfg["FPS"]
-    OUT_SCALE = cfg["OUT_SCALE"]
-    SHOW_DEBUG_WINDOWS = cfg["SHOW_DEBUG_WINDOWS"]
-    USE_BLUR = cfg["USE_BLUR"]
-    BLUR_KSIZE = cfg["BLUR_KSIZE"]
-    BLUR_SIGMA = cfg["BLUR_SIGMA"]
-    SAFE_FLUSH = cfg["SAFE_FLUSH"]
-    ACCEPTANCE = cfg["ACCEPTANCE"]
-    STOP_HOLD_FRAMES = cfg["STOP_HOLD_FRAMES"]
-    SEND_COMMANDS = cfg["SEND_COMMANDS"] and not args.no_send
-    COMMAND_COOLDOWN = cfg["COMMAND_COOLDOWN"]
-    MOVEMENT_DURATION = cfg["MOVEMENT_DURATION"]
-    
+
+    # Load .env from the same folder as this script
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
+
+    CAM_DEVICE = Config.CAM_DEVICE
+    VIDEO_PATH = Config.VIDEO_PATH
+    ROI_PT_PATH = Config.ROI_PT_PATH
+    W = Config.W
+    H = Config.H
+    FPS = Config.FPS
+    OUT_SCALE = Config.OUT_SCALE
+    SHOW_DEBUG_WINDOWS = Config.SHOW_DEBUG_WINDOWS
+    SAVE_DEBUG_IMAGES=Config.SAVE_DEBUG_IMAGES
+    USE_BLUR = Config.USE_BLUR
+    BLUR_KSIZE = Config.BLUR_KSIZE
+    SAFE_FLUSH = Config.SAFE_FLUSH
+    ACCEPTANCE = Config.ACCEPTANCE
+    CALIB_RANGE = 5 # Fix latter
+    STOP_HOLD_FRAMES = Config.STOP_HOLD_FRAMES
+    SEND_COMMANDS = Config.SEND_COMMANDS
+    COMMAND_COOLDOWN = Config.COMMAND_COOLDOWN
+    MOVEMENT_DURATION_TURN = Config.MOVEMENT_DURATION_TURN
+    ILLUM_NORMALIZATION=Config.ILLUM_NORMALIZATION
+    DEBUG_STATIC=Config.DEBUG_STATIC
+    THR_MODE=Config.THR_MODE
+    THR_L=Config.THR_L
+    THR_OFFSET=Config.THR_OFFSET
+    MIN_AREA=Config.MIN_AREA
+    MIN_THICK=Config.MIN_THICK
+    ASPECT_MAX=Config.ASPECT_MAX
+    LINE_AR_REJECT=Config.LINE_AR_REJECT
+    LINE_FILL_MAX=Config.LINE_FILL_MAX
+    AREA_PCT=Config.AREA_PCT
+    FLOOR_PROFILE_PATH=Config.FLOOR_PROFILE_PATH
+    ENABLE_STATIC_STOP = Config.ENABLE_STATIC_STOP
+    ENABLE_CALIBRATION = Config.ENABLE_CALIBRATION
+    sp = StaticParams(DEBUG_STATIC=DEBUG_STATIC,
+                    THR_MODE=THR_MODE,
+                    THR_L=THR_L,
+                    THR_OFFSET=THR_OFFSET,
+                    MIN_AREA=MIN_AREA,
+                    MIN_THICK=MIN_THICK,
+                    ASPECT_MAX=ASPECT_MAX,
+                    LINE_AR_REJECT=LINE_AR_REJECT,
+                    LINE_FILL_MAX=LINE_FILL_MAX,
+                    AREA_PCT=AREA_PCT,
+                    ILLUM_NORM=ILLUM_NORMALIZATION,
+                    FLOOR_PROFILE_PATH=FLOOR_PROFILE_PATH)
+
+    # -------- ENV RELOAD SETUP --------
+    ENV_RELOAD_INTERVAL = 30.0  # seconds
+    last_env_reload = time.time()
+
     # Initialize ROI
     roi_helper = ROI(
-        saved_path="AUTO_CAR_V2/roi_points.txt",
-        ROTATE_CW_DEG=0,
-        FLIPCODE=1,
+        saved_path=ROI_PT_PATH,
+        ROTATE_CW_DEG=180,
+        FLIPCODE=-1,
         ANGLE_TRIANGLE=math.radians(60),
         W=W, H=H
     )
@@ -222,7 +258,7 @@ def main():
     frame0 = cv.resize(frame0, (roi_helper.W, roi_helper.H))
 
     # Initialize calibration and masks
-    calib = Calibrate()
+    calib = Calibrate(MAX_LINES_TO_PROCESS=30)
     DANGER_YFRAC = 0.85
     EDGE_PAD = 4
     roi_mask, danger_mask = roi_helper.build_masks(
@@ -234,10 +270,13 @@ def main():
     os.makedirs("output/logs", exist_ok=True)
 
     out_path = os.path.join("output", "result_combined.avi")
+    out_path_video_ori = os.path.join("output", "original.avi")
     fourcc = cv.VideoWriter_fourcc(*"XVID")
     out_w = int(W * OUT_SCALE * 3)
     out_h = int(H * OUT_SCALE)
     writer = cv.VideoWriter(out_path, fourcc, FPS, (out_w, out_h))
+    writer2 = cv.VideoWriter(out_path_video_ori, fourcc, FPS, (W,H))
+
     print(f"[INFO] Writing combined video to: {out_path}")
 
     log_file = os.path.join("output/logs", "detection_log.txt")
@@ -261,7 +300,7 @@ def main():
         print("[INFO] Command sending disabled. Running in simulation mode.")
 
     # Initialize state
-    sp = StaticParams()
+
     frame_id = 0
     hold_active = False
     hold_remaining = 0
@@ -275,14 +314,25 @@ def main():
             daemon=True
         )
         listener_thread.start()
+    
+    stop_detected=False
+    calibration=False
+    cond='pass'
+    bbox=None
 
     print("\n" + "="*50)
     print("  JETSON CALIBRATION STARTED")
     print("="*50)
     print("Press 'q' in console or Ctrl+C to stop\n")
-
+    
+    # Start MJPEG Stream
+    print("[INFO] Starting MJPEG debug stream on http://192.168.10.210:5005")
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
     try:
         while True:
+
             if not SHOW_DEBUG_WINDOWS and stop_event.is_set():
                 print("[INFO] Stop event detected. Exiting loop.")
                 break
@@ -297,12 +347,19 @@ def main():
             frame = rotate(frame, roi_helper.ROTATE_CW_DEG)
             frame = cv.flip(frame, roi_helper.FLIPCODE)
             frame = cv.resize(frame, (roi_helper.W, roi_helper.H))
-
+            
+            frame_original=frame.copy()
+            frame_color=frame.copy()
+            frame_gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+            
             if USE_BLUR:
-                frame = cv.medianBlur(frame, BLUR_KSIZE)
-                
+                frame_gray = cv.medianBlur(frame_gray, BLUR_KSIZE)
+
             start_t = time.time()
-            stop_detected, bbox, dbg = static_stop_detect(frame, roi_mask, danger_mask, sp)
+
+            # Static stop will not be performed during calibration
+            if ENABLE_STATIC_STOP and not calibration:
+                stop_detected, bbox, dbg = static_stop_detect(frame_color, roi_mask, danger_mask, sp)
             elapsed_ms = (time.time() - start_t) * 1000
 
             # Update hold logic
@@ -311,63 +368,115 @@ def main():
             )
 
             # Prepare visualization
-            vis = frame.copy()
+            vis = frame_color.copy()
             bbox_info = "None"
-            if bbox is not None:
+            if bbox:
                 x, y, bw, bh = bbox
                 cv.rectangle(vis, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
                 bbox_info = f"x={x},y={y},w={bw},h={bh}"
 
+            if not ENABLE_STATIC_STOP:
+                            cv.putText(vis, "OBJ DET: OFF", (10, H-20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
             angle_est, cond, angle_log = None, None, None
             command_to_send = None
+            current_duration = 0.0  # Initialize duration
 
-            # === DECISION LOGIC ===
             if hold_active:
                 # STOP detected and holding
-                cond = 'STOP'
-                command_to_send = "stop"
-                
+                cond = 'stop'
+                command_to_send = cond
+                current_duration = 0.0  # Stop is immediate
+
                 print(f'[FRAME {frame_id}] STOP DETECTED! (hold: {hold_remaining})')
                 cv.putText(vis, "STOP", (10, 24), cv.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
                 cv.putText(vis, f"hold:{hold_remaining}", (10, 48), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-            else:
+            elif ENABLE_CALIBRATION:
                 # No stop detected - do angle estimation
                 angle_est, angle_log = calib.update(frame)
                 
                 if angle_est is not None:
+                    # angle_est is the centerline in radians.
+                    # np.pi/2 (1.57 rad) is perfectly straight ahead (vertical in image)
                     angle_deg = np.rad2deg(angle_est)
                     
-                    if angle_est < np.pi/2 - np.deg2rad(ACCEPTANCE):
-                        cond = 'RIGHT'
-                        command_to_send = f"right {MOVEMENT_DURATION}"
-                    elif angle_est > np.pi/2 + np.deg2rad(ACCEPTANCE):
-                        cond = 'LEFT'
-                        command_to_send = f"left {MOVEMENT_DURATION}"
-                    else:
-                        cond = 'FORWARD'
-                        command_to_send = f"forward {MOVEMENT_DURATION}"
+                    # Calculate deviation from straight (90 degrees)
+                    angle_error = angle_deg - 90.0
                     
-                    print(f'[FRAME {frame_id}] Turn: {cond} (angle: {angle_deg:.1f}°)')
+                    # Log the centerline tracking
+                    if angle_log and SHOW_DEBUG_WINDOWS:
+                        cv.putText(vis, angle_log, (10, H-40), cv.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+
+                    # Initialize calib condition
+                    if not calibration:
+                        # If the absolute error is > 10 degrees, trigger correction
+                        if abs(angle_error) > 10.0:
+                            calibration = True
+                            cond = 'stop' # Stop momentarily before turning
+                            print(f'[FRAME {frame_id}] Deviation {angle_error:.1f}o > 10o! Triggering Correction.')
+                        else:
+                            cond = 'forward'
+                    # Determine turn command    
+                    else:
+                        # Continue turning until error is within 5 degrees
+                        if angle_error < -5.0:
+                            cond = 'left'
+                        elif angle_error > 5.0:
+                            cond = 'right'
+                        else:
+                            # We are back within the acceptable margin
+                            cond = 'pass'
+                            calibration = False
+                            print(f'[FRAME {frame_id}] Re-aligned (Error: {angle_error:.1f}o). Resuming.')
+
+                    if calibration:
+                        print(f'[FRAME {frame_id}] Turn: {cond} (Error: {angle_error:.1f}o)')
+                    elif cond == 'forward':
+                        # Optional: limit print spam if it goes too fast, but log helps visualization
+                        pass
                     
                     cv.putText(vis, f"turn: {cond}", (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    cv.putText(vis, f"err: {angle_error:.1f}*", (10, 80), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+
+                    # Prepare command to send (hold: prefix for smooth continuous turns)
+                    if cond in ['left', 'right']:
+                        command_to_send = f'hold:{cond}'
+                    elif cond == 'forward':
+                        command_to_send = 'forward'
+                    elif cond == 'stop':
+                        command_to_send = 'stop'
+                    elif cond == 'pass':
+                        command_to_send = 'stop'  # explicitly stop held turn
+                    else:
+                        command_to_send = None
                     
                     # Draw angle arrow
                     H_vis = H - 10
                     if SHOW_DEBUG_WINDOWS:
-                        draw_arrow_by_angle(vis, (W//2, H_vis), angle_deg, 100, (255, 0, 255), 5)
-                    cv.putText(vis, f"{angle_deg:.1f}°", (W//2+20, H_vis-5), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+                        vis=draw_arrow_by_angle(vis, (W//2, H_vis), angle_deg, 100, (255, 0, 255), 5)
+                    cv.putText(vis, f"{angle_deg:.1f}", (W//2+20, H_vis-5), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+            else:
+                # Calibration Disabled
+                cv.putText(vis, "LANE CALIB: OFF", (W-150, H-20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
             # === SEND COMMAND TO CLIENT ===
+            # Only send when command actually changes (hold mode = state-based)
             if vision_client and command_to_send:
-                if throttler.should_send(command_to_send):
+                duration = MOVEMENT_DURATION_TURN if 'hold' in command_to_send else 0.0
+                if throttler.should_send(command_to_send, duration=duration):
                     result = vision_client.send_command(command_to_send)
                     if result.get("status") != "ok":
                         print(f"[ERROR] Command failed: {result}")
 
             # === PREPARE OUTPUT VIDEO ===
-            nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
-            nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
+            if  ENABLE_STATIC_STOP:
+                nf_color = cv.cvtColor(dbg["nonfloor"], cv.COLOR_GRAY2BGR)
+                nd_color = cv.cvtColor(dbg["nf_danger"], cv.COLOR_GRAY2BGR)
+
+            else:
+                nf_color = np.zeros_like(vis)
+                nd_color = np.zeros_like(vis)
 
             vis_s = cv.resize(vis, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
             nf_s = cv.resize(nf_color, (int(W * OUT_SCALE), int(H * OUT_SCALE)))
@@ -375,21 +484,40 @@ def main():
             combined = np.hstack((vis_s, nf_s, nd_s))
             writer.write(combined)
 
+            global global_frame
+            with frame_lock:
+                global_frame = combined
+
             # Display windows
             if SHOW_DEBUG_WINDOWS:
                 cv.imshow("Combined", combined)
                 if cv.waitKey(1) & 0xFF == ord('q'):
                     break
 
+            if SAVE_DEBUG_IMAGES:
+                writer2.write(frame_original)
+
             # Log debug info
-            log_msg = (
-                f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
-                f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
-                f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms | "
-                f"angle: {angle_est} | angle_deg: {np.rad2deg(angle_est) if angle_est else None} | "
-                f"Turn: {cond} | Command: {command_to_send}"
-            )
-            log_message(log_file, log_msg)
+            if ENABLE_STATIC_STOP:
+                log_msg = (
+                    f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
+                    f"{bbox_info} | area%={dbg['area_pct']:.2f} | elong={dbg['elong']:.2f} | "
+                    f"fill={dbg['fill']:.2f} | elapsed={elapsed_ms:.1f}ms | "
+                    f"angle: {angle_est} | angle_deg: {np.rad2deg(angle_est) if angle_est else None} | "
+                    f"Turn: {cond} | Command: {command_to_send}"
+                )
+                log_message(log_file, log_msg)
+
+            else:
+                log_msg = (
+                    f"Frame {frame_id:05d} | DETECT={stop_detected} | HOLD={hold_active}({hold_remaining}) | "
+                    f"{bbox_info}"
+                    f"| elapsed={elapsed_ms:.1f}ms | "
+                    f"angle: {angle_est} | angle_deg: {np.rad2deg(angle_est) if angle_est else None} | "
+                    f"Turn: {cond} | Command: {command_to_send}"
+                )
+                log_message(log_file, log_msg)
+
 
     except KeyboardInterrupt:
         print("\n[INFO] Interrupted by user (Ctrl+C)")
@@ -402,8 +530,12 @@ def main():
         
         cap.release()
         writer.release()
+        print()
+        if SAVE_DEBUG_IMAGES:
+            print(f"[INFO] Finished. Original vid saved at: {out_path_video_ori}")
+            writer2.release()
         cv.destroyAllWindows()
-        print(f"\n[INFO] Finished. Logs saved at: {log_file}")
+        print(f"[INFO] Finished. Logs saved at: {log_file}")
         print(f"[INFO] Video saved at: {out_path}")
 
 
